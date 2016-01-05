@@ -38,12 +38,35 @@ let streams_for_pasv t = (
     (fin,fout)
 )
 
-let get_file t filename = (
+let put_file t local_filename distant_filename = (
   let (fin,fout) = streams_for_pasv t in
-  let () = fprintf t.fout "RETR %s\n" filename ; flush t.fout in
+  let () = fprintf t.fout "STOR %s\n" distant_filename ; flush t.fout in
   let line = input_line t.fin in 
   let () = printf "%s\n" line ; flush stdout ; in
-  let fwrite = open_out_bin filename in
+  let fread = open_in_bin local_filename in
+  let max = 1024 in
+  let buffer = String.create max in
+  let rec r () =
+    try
+      let nb = input fread buffer 0 max in
+	if nb=0 then ( close_out fout ; () ) else (
+	  output fout buffer 0 nb ;
+	  r ()
+	)
+    with
+      | End_of_file -> failwith "bad end"
+  in
+  let () = r() in
+  let line = input_line t.fin in 
+  let () = printf "%s\n" line ; flush stdout ; in
+    ()
+)
+let get_file t distant_filename local_filename = (
+  let (fin,fout) = streams_for_pasv t in
+  let () = fprintf t.fout "RETR %s\n" distant_filename ; flush t.fout in
+  let line = input_line t.fin in 
+  let () = printf "%s\n" line ; flush stdout ; in
+  let fwrite = open_out_bin local_filename in
   let max = 1024 in
   let buffer = String.create max in
   let rec r () =
@@ -144,7 +167,10 @@ let main host port user password  = (
       | ["pwd"] -> command t false ["PWD"]
       | ["cd";d] -> command t false ["CWD";d]
       | ["cwd";d] -> command t false ["CWD";d]
-      | ["get";filename] -> get_file t filename
+      | ["get";filename] -> get_file t filename filename
+      | ["get";distant_filename;local_filename] -> get_file t distant_filename local_filename
+      | ["put";filename] -> put_file t filename filename
+      | ["put";local_filename;distant_filename] -> put_file t local_filename distant_filename
       | s ->  printf "->??? %s\n" line ; flush stdout ;
     in
       r ()
