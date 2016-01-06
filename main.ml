@@ -21,6 +21,6 @@ let _ =
       | _ -> failwith "bad command line"
     in
     let t = Auto_ftp.connect ~host ~port ~user ~password in
-      Auto_ftp.loop t
+      Auto_ftp.interactive_loop t
   with
     | e -> printf "%s\n" (Printexc.to_string e) ; usage () ; exit 1

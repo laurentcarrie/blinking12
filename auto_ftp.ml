@@ -29,7 +29,7 @@ let port_of_answer line = (
 
 
 let streams_for_pasv t = (
-  let () = fprintf t.fout "PASV\n" ; flush t.fout in
+  let () = fprintf t.fout "PASV\r\n" ; flush t.fout in
   let port = 
     let rec r () = 
       let line = input_line t.fin in
@@ -49,7 +49,7 @@ let streams_for_pasv t = (
 
 let put_file t local_filename distant_filename = (
   let (fin,fout) = streams_for_pasv t in
-  let () = fprintf t.fout "STOR %s\n" distant_filename ; flush t.fout in
+  let () = fprintf t.fout "STOR %s\r\n" distant_filename ; flush t.fout in
   let line = input_line t.fin in 
   let () = printf "%s\n" line ; flush stdout ; in
   let fread = open_in_bin local_filename in
@@ -72,7 +72,7 @@ let put_file t local_filename distant_filename = (
 )
 let get_file t distant_filename local_filename = (
   let (fin,fout) = streams_for_pasv t in
-  let () = fprintf t.fout "RETR %s\n" distant_filename ; flush t.fout in
+  let () = fprintf t.fout "RETR %s\r\n" distant_filename ; flush t.fout in
   let line = input_line t.fin in 
   let () = printf "%s\n" line ; flush stdout ; in
   let fwrite = open_out_bin local_filename in
@@ -97,7 +97,7 @@ let get_file t distant_filename local_filename = (
 
 let command t has_data (args:string list) = (
   let (fin,fout) = streams_for_pasv t in
-  let () = fprintf t.fout "%s\n" (String.join " " args) ; flush t.fout in
+  let () = fprintf t.fout "%s\r\n" (String.join " " args) ; flush t.fout in
 (*
       let line = input_line t.fin in 
       let () = printf "%s\n" line ; flush stdout ; in
@@ -185,12 +185,14 @@ let connect ~host ~port ~user ~password  = (
   let commands = [
     sprintf "USER %s" user ;
     sprintf "PASS %s" password  ; 
+
     "TYPE I" ;
     "STRU F" ;
     "MODE S" ;
+    (* "SYST" ; *)
   ] in
   let () = List.iter ( fun c ->
-    fprintf t.fout "%s\n" c ; flush fout ;
+    fprintf t.fout "%s\r\n" c ; flush fout ;
     let _ = read () in ()
   ) commands in
 
@@ -212,7 +214,7 @@ let print_list t = (
     flush stdout
 )
 
-let loop t = (
+let interactive_loop t = (
   let rec r () = 
     let () = printf ">" ; flush stdout ; in
     let line = read_line () in
@@ -231,7 +233,8 @@ let loop t = (
       | ["get";distant_filename;local_filename] -> let _ = get_file t distant_filename local_filename in ()
       | ["put";filename] -> let _ = put_file t filename filename in ()
       | ["put";local_filename;distant_filename] -> let _ = put_file t local_filename distant_filename in ()
-      | s ->  printf "->??? %s\n" line ; flush stdout ;
+      | [a;b] ->  let _ = command t false [a;b]  in ()
+      | _ -> printf "->??? %s\n" line ; flush stdout ;
     in
       r ()
   in
