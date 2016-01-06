@@ -187,9 +187,9 @@ let connect ~host ~port ~user ~password  = (
     sprintf "PASS %s" password  ; 
 
     "TYPE I" ;
-    "STRU F" ;
-    "MODE S" ;
-    (* "SYST" ; *)
+    (* "STRU F" ;*)
+    (* "MODE S" ; *)
+    "SYST" ; 
   ] in
   let () = List.iter ( fun c ->
     fprintf t.fout "%s\r\n" c ; flush fout ;
@@ -233,8 +233,8 @@ let interactive_loop t = (
       | ["get";distant_filename;local_filename] -> let _ = get_file t distant_filename local_filename in ()
       | ["put";filename] -> let _ = put_file t filename filename in ()
       | ["put";local_filename;distant_filename] -> let _ = put_file t local_filename distant_filename in ()
-      | [a;b] ->  let _ = command t false [a;b]  in ()
-      | _ -> printf "->??? %s\n" line ; flush stdout ;
+      | l ->  let _ = command t false l  in ()
+      (* | _ -> printf "->??? %s\n" line ; flush stdout ; *)
     in
       r ()
   in
