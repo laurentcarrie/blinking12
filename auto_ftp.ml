@@ -15,6 +15,23 @@ type file = {
   is_directory : bool ;
 }
 
+type diff_status = 
+    | Identical
+    | Different
+    | Only_remote
+    | Only_local
+
+let log_print = ref None
+
+
+let log fs =
+  (match !log_print with
+    (* | None -> ksprintf ( print_endline ) *)
+    | None -> ksprintf ( fun _ -> ()) fs
+    | Some f -> ksprintf f fs
+  ) 
+  
+
 let port_of_answer line = (
   let reg = Str.regexp "227 Entering Passive Mode (.+,.+,.+,.+,\\(.+\\),\\(.+\\))." in
     if Str.string_match reg line 0 then (
@@ -48,10 +65,11 @@ let streams_for_pasv t = (
 
 
 let put_file t local_filename distant_filename = (
+  let () = log "put_file %s %s\n" local_filename distant_filename in
   let (fin,fout) = streams_for_pasv t in
   let () = fprintf t.fout "STOR %s\r\n" distant_filename ; flush t.fout in
   let line = input_line t.fin in 
-  let () = printf "%s\n" line ; flush stdout ; in
+  let () = log "%s\n" line in
   let fread = open_in_bin local_filename in
   let max = 1024 in
   let buffer = String.create max in
@@ -67,14 +85,14 @@ let put_file t local_filename distant_filename = (
   in
   let () = r() in
   let line = input_line t.fin in 
-  let () = printf "%s\n" line ; flush stdout ; in
+  let () = log "%s\n" line in 
     ()
 )
 let get_file t distant_filename local_filename = (
   let (fin,fout) = streams_for_pasv t in
   let () = fprintf t.fout "RETR %s\r\n" distant_filename ; flush t.fout in
   let line = input_line t.fin in 
-  let () = printf "%s\n" line ; flush stdout ; in
+  let () = log "%s\n" line in 
   let fwrite = open_out_bin local_filename in
   let max = 1024 in
   let buffer = String.create max in
@@ -90,13 +108,14 @@ let get_file t distant_filename local_filename = (
   in
   let () = r() in
   let line = input_line t.fin in 
-  let () = printf "%s\n" line ; flush stdout ; in
+  let () = log "%s\n" line in
     ()
 )
 
 
 let command t has_data (args:string list) = (
   let (fin,fout) = streams_for_pasv t in
+  let () = log "%s\r\n" (String.join " " args) in
   let () = fprintf t.fout "%s\r\n" (String.join " " args) ; flush t.fout in
 (*
       let line = input_line t.fin in 
@@ -108,10 +127,10 @@ let command t has_data (args:string list) = (
     try
       let nb = input fin buffer 0 max in
       let acc = acc ^ (String.sub buffer 0 nb) in
-	output stdout buffer 0 nb ; 
+	log "%s" (String.sub buffer 0 nb ) ;
 	if nb=0 then acc else r acc
     with
-      | End_of_file ->printf "EOF\n" ; flush stdout ;  acc
+      | End_of_file -> log "EOF\n" ;  acc
   in
   let ret = if has_data then r "" else "" in
   let () = Unix.shutdown_connection fin in 
@@ -134,8 +153,44 @@ let cwd t dir = (
     ()
 )
 
-let list t = (
-  let data = command t true ["LIST"] in
+let rm t filename = (
+  let ()_ = fprintf t.fout "DELE %s\r\n" filename ; flush t.fout ; in
+  let line = input_line t.fin in
+  let () = log "%s\n" line in 
+    ()
+)
+
+let rmdir t filename = (
+  let ()_ = fprintf t.fout "RMD %s\r\n" filename ; flush t.fout ; in
+  let line = input_line t.fin in
+  let () = log "%s\n" line in 
+    ()
+)
+
+let mkdir t filename = (
+  let ()_ = fprintf t.fout "MKD %s\r\n" filename ; flush t.fout ; in
+  let line = input_line t.fin in
+  let () = log "%s\n" line in 
+    ()
+)
+
+let mv t old_name new_name = (
+  let ()_ = fprintf t.fout "RNFR %s\r\n" old_name ; flush t.fout ; in
+  let line = input_line t.fin in
+  let () = log "%s\n" line in 
+  let ()_ = fprintf t.fout "RNTO %s\r\n" new_name ; flush t.fout ; in 
+  let line = input_line t.fin in
+  let () = log "%s\n" line in
+    ()
+)
+  
+let cwd t dir = (
+  let _ = command t false ["CWD";dir] in
+    ()
+)
+
+let list t dirname = (
+  let data = command t true ["LIST";dirname] in
   let data = String.nsplit data "\n" in
   let data = List.filter ( fun line -> not (String.starts_with line "total") ) data in
   let rec strip data =
@@ -162,10 +217,17 @@ let list t = (
 
 let help () = 
   printf "
-help       : this help
-list       : list files in remote directory
-pwd        : print remote current working directory
-cwd <arg>  : change remote working direcytory
+help                 : this help
+list                 : list files in remote directory
+ls                   : list files in remote directory
+pwd                  : print remote current working directory
+cwd <arg>            : change remote working direcytory
+rm <arg>             : remove file
+mkdir <arg>          : make directory
+rmdir <arg>          : remove directory (must be empty)
+mv <arg1> <arg2>     : move file
+put <local> <remote> : put file
+get <remote> <local> : get file
 " ; flush stdout
 
 let connect ~host ~port ~user ~password  = (
@@ -178,7 +240,7 @@ let connect ~host ~port ~user ~password  = (
   let rec read () =
     try
       let line = input_line t.fin in
-	printf "--> %s\n" line  ; flush stdout ; line
+	log "--> %s\n" line  ; line
     with
       | End_of_file -> ""
   in
@@ -199,8 +261,24 @@ let connect ~host ~port ~user ~password  = (
     t
 )
 
-let print_list t = (
-  let data = list t in
+let dir_compare t local distant = (
+  let local_files = Array.to_list (Sys.readdir local) in
+  let distant_files = list t distant in
+    (List.map ( fun l -> (l,Only_local)) local_files)
+      @
+      (List.map ( fun f -> (f.name,Only_remote)) distant_files)
+)
+
+let echo b = (
+  if b then (
+    log_print := Some ( fun s -> printf "%s" s ; flush stdout )  
+  )
+  else
+    log_print := None
+)
+
+let print_list t d = (
+  let data = list t d in
   let data = List.sort ~cmp:( fun f1 f2 ->
     match f1.is_directory,f2.is_directory with
       | true,true 
@@ -209,18 +287,37 @@ let print_list t = (
       | false,true -> (+1)
   ) data in
     List.iter ( fun f ->
-      printf "%s %s\n" ( if f.is_directory then "d" else " ") f.name 
+      log "%s %s\n" ( if f.is_directory then "d" else " ") f.name 
     ) data ;
-    flush stdout
+)
+
+let print_compare t l d = (
+  let () = log "======== COMPARE %s and %s\n" l d in
+  let data = dir_compare t l d in
+  let string_of_status d = match d with
+    | Identical -> " = "
+    | Different -> " # "
+    | Only_remote -> " r "
+    | Only_local -> " l "
+  in
+    List.iter ( fun (name,status) ->
+      log "%s %s\n" (string_of_status status) name
+    ) data ;
 )
 
 let interactive_loop t = (
+  (* log_print := Some ( fun s -> printf "%s" s ; flush stdout )  ; *)
+  let () = echo true in
   let rec r () = 
     let () = printf ">" ; flush stdout ; in
     let line = read_line () in
+    let line = String.strip line in
+    let line = if String.starts_with line "#" then "" else line in
     let () = match (String.nsplit line " ")  with
       | ["list"] 
-      | ["ls"] -> print_list t 
+      | ["ls"] -> print_list t "."
+      | ["list";d] 
+      | ["ls";d] -> print_list t d
 (*
       | ["ls";d] -> let _ = list t "" in ()
       | ["list";d] -> let _ = list t "" in ()
@@ -233,8 +330,16 @@ let interactive_loop t = (
       | ["get";distant_filename;local_filename] -> let _ = get_file t distant_filename local_filename in ()
       | ["put";filename] -> let _ = put_file t filename filename in ()
       | ["put";local_filename;distant_filename] -> let _ = put_file t local_filename distant_filename in ()
-      | l ->  let _ = command t false l  in ()
-      (* | _ -> printf "->??? %s\n" line ; flush stdout ; *)
+      | ["mv";old_name;new_name] -> let _ = mv t old_name new_name in ()
+      | ["rm";name] -> let _ = rm t name  in ()
+      | ["rmdir";name] -> let _ = rmdir t name  in ()
+      | ["mkdir";name] -> let _ = mkdir t name  in ()
+      | ["echo";"on"] -> echo true 
+      | ["echo";"off"] -> echo false
+      | ["compare";local;distant] -> let _ = print_compare t local distant in ()
+      (* | l ->  let _ = command t false l  in () *)
+      | [] -> ()
+      | s -> log "-> unknown command '%s'\n" line ; flush stdout ; 
     in
       r ()
   in

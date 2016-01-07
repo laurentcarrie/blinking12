@@ -7,10 +7,23 @@ type file = {
   is_directory : bool ;
 }
 
+type diff_status = 
+    | Identical
+    | Different
+    | Only_remote
+    | Only_local
+
+
 val connect : host:Unix.inet_addr -> port:int -> user:string -> password:string -> t
 
 val interactive_loop : t -> unit
 
 val cwd : t -> string -> unit
 val pwd : t -> string
-val list : t -> file list
+val list : t -> string -> file list
+val mv : t -> string -> string -> unit
+val rm : t -> string -> unit
+val rmdir : t -> string -> unit
+val mkdir : t -> string -> unit
+val echo : bool -> unit
+val dir_compare : t -> string -> string -> (string*diff_status) list
