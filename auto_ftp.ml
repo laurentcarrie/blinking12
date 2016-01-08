@@ -109,9 +109,12 @@ let put_file t local_filename distant_filename = (
 )
 let get_file t distant_filename local_filename = (
   let (fin,fout) = streams_for_pasv t in
-  let () = fprintf t.fout "RETR %s\r\n" distant_filename ; flush t.fout in
+  let command = sprintf "RETR %s\r\n" distant_filename in
+  let () = log "%s" command in
+  let () = fprintf t.fout "%s" command ; flush t.fout in
   let line = input_line t.fin in 
   let () = log "%s\n" line in 
+  let () = log "writing to '%s'\n" local_filename in
   let fwrite = open_out_bin local_filename in
   let max = 1024 in
   let buffer = String.create max in
@@ -130,6 +133,7 @@ let get_file t distant_filename local_filename = (
   let () = log "%s\n" line in
     ()
 )
+
 
 
 let command t has_data (args:string list) = (
@@ -209,6 +213,52 @@ let list t dirname = (
     ) data
 )
 
+let get_dir t distant_dir local_dir = (
+  log "get_dir '%s' '%s'\n" distant_dir local_dir ;
+  let rec r distant_dir local_dir = (
+    let () = log "create local directory '%s'\n" local_dir in
+    let () = try Unix.mkdir local_dir 0o755 with | _ -> () in
+    let files = list t distant_dir in
+      List.iter ( fun f ->
+	let () = log "E: '%s'\n" f.name in
+	if f.is_directory then (
+	  r (distant_dir//f.name) (local_dir//f.name) 
+	) else (
+	  get_file t (distant_dir//f.name) (local_dir//f.name)
+	)
+      ) files
+  )
+  in
+    r distant_dir local_dir
+)
+
+let mkdir t filename = (
+  let ()_ = fprintf t.fout "MKD %s\r\n" filename ; flush t.fout ; in
+  let line = input_line t.fin in
+  let () = log "%s\n" line in 
+    ()
+)
+
+
+let put_dir t local_dir distant_dir  = (
+  log "put_dir '%s' '%s'\n" distant_dir local_dir ;
+  let rec r local_dir distant_dir  = (
+    let () = mkdir t distant_dir in
+    let files = Array.to_list ( Sys.readdir local_dir ) in
+      List.iter ( fun f ->
+	let () = log "E: '%s'\n" f in
+	if Sys.is_directory (local_dir//f) then (
+	  r (local_dir//f)  (distant_dir//f) 
+	) else (
+	  put_file t (local_dir//f) (distant_dir//f)
+	)
+      ) files
+  )
+  in
+    r local_dir distant_dir
+)
+
+
 let nlst t dirname = (
   let data = command t true ["NLST";dirname] in
     log "%s\n" data ;
@@ -260,13 +310,6 @@ let rmdir t dirname = (
   let command = sprintf "RMD %s\r\n" dirname in
   let () = log "%s" command in
   let ()_ = fprintf t.fout "%s" command ; flush t.fout ; in
-  let line = input_line t.fin in
-  let () = log "%s\n" line in 
-    ()
-)
-
-let mkdir t filename = (
-  let ()_ = fprintf t.fout "MKD %s\r\n" filename ; flush t.fout ; in
   let line = input_line t.fin in
   let () = log "%s\n" line in 
     ()

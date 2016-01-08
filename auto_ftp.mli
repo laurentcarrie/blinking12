@@ -27,7 +27,9 @@ val mkdir : t -> string -> unit
 val echo : bool -> bool
 val dir_compare : t -> string -> string -> (string*diff_status) list
 val get_file : t -> string -> string -> unit
+val get_dir : t -> string -> string -> unit
 val put_file : t -> string -> string -> unit
+val put_dir : t -> string -> string -> unit
 val log : ('a, unit, string, unit) format4 -> 'a
 val nlst : t -> string -> string
 
