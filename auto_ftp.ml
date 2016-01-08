@@ -2,10 +2,18 @@ open Printf
 open ExtList
 open ExtString
 
+let (//) = Filename.concat
+
+type server = 
+    | VsFTPd
+    | Core_FTP
+    | Unknown
+
 type t = {
   fin : in_channel ;
   fout : out_channel ;
   host : Unix.inet_addr ;
+  server : server ;
 }
 
 type file = {
@@ -63,6 +71,17 @@ let streams_for_pasv t = (
     (fin,fout)
 )
 
+let echo b = (
+  let previous = match !log_print with | None -> false  | Some _ -> true in
+    (
+      if b then (
+	log_print := Some ( fun s -> printf "%s" s ; flush stdout )  
+      )
+      else
+	log_print := None
+    ) ;
+    previous
+)
 
 let put_file t local_filename distant_filename = (
   let () = log "put_file %s %s\n" local_filename distant_filename in
@@ -153,15 +172,94 @@ let cwd t dir = (
     ()
 )
 
+let list t dirname = (
+  let data = command t true ["LIST";dirname] in
+  let data = String.nsplit data "\n" in
+  let data = List.filter ( fun line -> not (String.starts_with line "total") ) data in
+  let rec strip data =
+    let (changed,data) = String.replace ~str:data ~sub:"  " ~by:" " in
+      if changed then strip data else data
+  in
+  let data = List.map ( fun line -> strip line ) data in
+  let data = List.map ( fun line -> String.strip line ) data in
+  let data = List.filter ( fun line -> String.strip line <> "" ) data in
+
+    List.map ( fun line ->
+      let data = String.nsplit line " " in
+      let (access,group,size,name) = 
+	match t.server with
+	  | VsFTPd -> (
+	      match data with
+		| access::_::group::size::d1::d2::d3::tl -> access,group,size,(String.join " " tl)
+		| _ -> 	( let n = List.length data in failwith ("list, " ^ (string_of_int n) ^ " could not match : '" ^ line ^ "'"))
+	    )
+	  | Core_FTP -> (
+	      match data with
+		| access::_::group::size::d1::d2::d3::d4::tl -> access,group,size,(String.join " " tl)
+		| _ -> 	( let n = List.length data in failwith ("list, " ^ (string_of_int n) ^ " could not match : '" ^ line ^ "'"))
+	    )
+	  | Unknown -> failwith "Unknown server, don't know how return string is formatted"
+      in
+	{
+	  name=name ;
+	  access=access ;
+	  group=group ;
+	  is_directory = String.get access 0 = 'd' ;
+	}
+    ) data
+)
+
+let nlst t dirname = (
+  let data = command t true ["NLST";dirname] in
+    log "%s\n" data ;
+    data
+)
+
+
 let rm t filename = (
-  let ()_ = fprintf t.fout "DELE %s\r\n" filename ; flush t.fout ; in
+  let () = log ">>>%s<<<\n" filename in
+  let command = sprintf "DELE %s\r\n" filename in 
+  let () = log "%s" command in
+  let () = fprintf t.fout "%s" command ; flush t.fout ; in
   let line = input_line t.fin in
   let () = log "%s\n" line in 
     ()
 )
 
-let rmdir t filename = (
-  let ()_ = fprintf t.fout "RMD %s\r\n" filename ; flush t.fout ; in
+let cwd t dir = (
+  let _ = command t false ["CWD";dir] in
+    ()
+)
+
+let stat t = (
+  let _ = command t false ["STAT"] in
+  let rec r acc =
+    try
+      let line = input_line t.fin in
+      let (first_word,_) = String.split line " " in
+      let acc = acc ^ "\n" ^ line in
+	try
+	  let _ = int_of_string first_word in
+	    acc 
+	with
+	  | _ -> r acc
+    with
+      | _ -> acc
+  in
+    r "" 
+)
+
+
+let rmdir t dirname = (
+  let files = list t dirname in
+  let () = log "%d files to delete\n" (List.length files) in
+  let () = List.iter ( fun f ->
+    let () = log "delete %s\n" ( dirname // f.name ) in
+      rm t ( dirname // f.name )
+  ) files in
+  let command = sprintf "RMD %s\r\n" dirname in
+  let () = log "%s" command in
+  let ()_ = fprintf t.fout "%s" command ; flush t.fout ; in
   let line = input_line t.fin in
   let () = log "%s\n" line in 
     ()
@@ -184,36 +282,6 @@ let mv t old_name new_name = (
     ()
 )
   
-let cwd t dir = (
-  let _ = command t false ["CWD";dir] in
-    ()
-)
-
-let list t dirname = (
-  let data = command t true ["LIST";dirname] in
-  let data = String.nsplit data "\n" in
-  let data = List.filter ( fun line -> not (String.starts_with line "total") ) data in
-  let rec strip data =
-    let (changed,data) = String.replace ~str:data ~sub:"  " ~by:" " in
-      if changed then strip data else data
-  in
-  let data = List.map ( fun line -> strip line ) data in
-  let data = List.filter ( fun line -> String.strip line <> "" ) data in
-
-    List.map ( fun line ->
-      let data = String.nsplit line " " in
-      let (access,group,size,name) = match data with
-	| access::_::group::size::d1::d2::d3::tl -> access,group,size,(String.join " " tl)
-	| _ -> 	( let n = List.length data in failwith ("list, " ^ (string_of_int n) ^ " could not match : '" ^ line ^ "'"))
-      in
-	{
-	  name=name ;
-	  access=access ;
-	  group=group ;
-	  is_directory = String.get access 0 = 'd' ;
-	}
-    ) data
-)
 
 
 let connect ~host ~port ~user ~password  = (
@@ -221,7 +289,17 @@ let connect ~host ~port ~user ~password  = (
   (* let (socket:Unix.file_descr) = Unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in *)
   (* let () = Unix.connect socket addr in*)
   let (fin,fout) = Unix.open_connection addr in
-  let t = { fin=fin ; fout=fout ; host=host } in
+  let server =
+    let line = input_line fin in
+    let () = log "%s\n" line in
+    let reg_vsftpd = Str.regexp "220.*FTP server.*" in
+    let reg_coreftp = Str.regexp "220-Core FTP Server.*" in
+      if Str.string_match reg_vsftpd line 0 then ( log "server is vsFTP\n" ; VsFTPd )
+      else if Str.string_match reg_coreftp line 0 then ( log "server is CoreFTP\n" ; Core_FTP )
+      else ( log "cannot identify server, please fix that\n" ; Unknown )
+  in
+    
+  let t = { fin=fin ; fout=fout ; host=host ; server=server ; } in
 
   let rec read () =
     try
@@ -255,11 +333,4 @@ let dir_compare t local distant = (
       (List.map ( fun f -> (f.name,Only_remote)) distant_files)
 )
 
-let echo b = (
-  if b then (
-    log_print := Some ( fun s -> printf "%s" s ; flush stdout )  
-  )
-  else
-    log_print := None
-)
   

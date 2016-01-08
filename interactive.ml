@@ -29,8 +29,9 @@ let print_list t d = (
       | false,true -> (+1)
   ) data in
     List.iter ( fun f ->
-      log "%s %s\n" ( if f.Auto_ftp.is_directory then "d" else " ") f.Auto_ftp.name 
+      printf "%s %s\n" ( if f.Auto_ftp.is_directory then "d" else " ") f.Auto_ftp.name 
     ) data ;
+    flush stdout
 )
 
 let print_compare t l d = (
@@ -43,18 +44,24 @@ let print_compare t l d = (
     | Auto_ftp.Only_local -> " l "
   in
     List.iter ( fun (name,status) ->
-      log "%s %s\n" (string_of_status status) name
+      printf "%s %s\n" (string_of_status status) name
     ) data ;
+    flush stdout
 )
 
 let interactive_loop t = (
   (* log_print := Some ( fun s -> printf "%s" s ; flush stdout )  ; *)
-  let () = Auto_ftp.echo true in
+  let _ = Auto_ftp.echo false in
   let rec r () = 
     let () = printf ">" ; flush stdout ; in
     let line = read_line () in
     let line = String.strip line in
     let line = if String.starts_with line "#" then "" else line in
+    let line = if String.starts_with line "!" then (
+      let command = String.lchop line in
+      let _ = Unix.system command in
+	""
+    ) else line in
     let () = match (String.nsplit line " ")  with
       | ["list"] 
       | ["ls"] -> print_list t "."
@@ -65,7 +72,7 @@ let interactive_loop t = (
       | ["list";d] -> let _ = list t "" in ()
 *)
       | ["help"] -> help () 
-      | ["pwd"] -> let ret = Auto_ftp.pwd t in printf ">>%s\n" ret ; ()
+      | ["pwd"] -> let ret = Auto_ftp.pwd t in printf "%s\n" ret ; ()
       | ["cd";d] -> let _ = Auto_ftp.command t false ["CWD";d] in ()
       | ["cwd";d] -> let _ = Auto_ftp.command t false ["CWD";d] in ()
       | ["get";filename] -> let _ = Auto_ftp.get_file t filename filename in ()
@@ -76,10 +83,13 @@ let interactive_loop t = (
       | ["rm";name] -> let _ = Auto_ftp.rm t name  in ()
       | ["rmdir";name] -> let _ = Auto_ftp.rmdir t name  in ()
       | ["mkdir";name] -> let _ = Auto_ftp.mkdir t name  in ()
-      | ["echo";"on"] -> Auto_ftp.echo true 
-      | ["echo";"off"] -> Auto_ftp.echo false
+      | ["echo";"on"] -> let _ =  Auto_ftp.echo true in ()
+      | ["echo";"off"] -> let _ = Auto_ftp.echo false in ()
       | ["compare";local;distant] -> let _ = print_compare t local distant in ()
       (* | l ->  let _ = command t false l  in () *)
+      | ["nlst"] -> let s = Auto_ftp.nlst t"." in printf "%s\n" s
+      | ["nlst";d] -> let s = Auto_ftp.nlst t d in printf "%s\n" s
+      | ["stat"] -> let s = Auto_ftp.stat t in printf "%s\n" s
       | [] -> ()
       | s -> log "-> unknown command '%s'\n" line ; flush stdout ; 
     in

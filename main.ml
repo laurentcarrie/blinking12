@@ -23,6 +23,7 @@ let _ =
 	    addr , int_of_string port,user,password)
       | _ -> failwith "bad command line"
     in
+    let _ = Auto_ftp.echo true in
     let t = Auto_ftp.connect ~host ~port ~user ~password in
       Interactive.interactive_loop t
   with
