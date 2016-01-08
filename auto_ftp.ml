@@ -7,6 +7,7 @@ let (//) = Filename.concat
 type server = 
     | VsFTPd
     | Core_FTP
+    | FTP_android
     | Unknown
 
 type t = {
@@ -192,17 +193,18 @@ let list t dirname = (
       let data = String.nsplit line " " in
       let (access,group,size,name) = 
 	match t.server with
-	  | VsFTPd -> (
-	      match data with
-		| access::_::group::size::d1::d2::d3::tl -> access,group,size,(String.join " " tl)
-		| _ -> 	( let n = List.length data in failwith ("list, " ^ (string_of_int n) ^ " could not match : '" ^ line ^ "'"))
-	    )
-	  | Core_FTP -> (
-	      match data with
-		| access::_::group::size::d1::d2::d3::d4::tl -> access,group,size,(String.join " " tl)
-		| _ -> 	( let n = List.length data in failwith ("list, " ^ (string_of_int n) ^ " could not match : '" ^ line ^ "'"))
-	    )
-	  | Unknown -> failwith "Unknown server, don't know how return string is formatted"
+	| Unknown
+	| VsFTPd -> (
+	  match data with
+	  | access::_::group::size::d1::d2::d3::tl -> access,group,size,(String.join " " tl)
+	  | _ -> 	( let n = List.length data in failwith ("list, " ^ (string_of_int n) ^ " could not match : '" ^ line ^ "'"))
+	)
+	| FTP_android
+	| Core_FTP -> (
+	  match data with
+	  | access::_::group::size::d1::d2::d3::d4::tl -> access,group,size,(String.join " " tl)
+	  | _ -> 	( let n = List.length data in failwith ("list, " ^ (string_of_int n) ^ " could not match : '" ^ line ^ "'"))
+	)
       in
 	{
 	  name=name ;
@@ -233,7 +235,7 @@ let get_dir t distant_dir local_dir = (
 )
 
 let mkdir t filename = (
-  let ()_ = fprintf t.fout "MKD %s\r\n" filename ; flush t.fout ; in
+  let () = fprintf t.fout "MKD %s\r\n" filename ; flush t.fout ; in
   let line = input_line t.fin in
   let () = log "%s\n" line in 
     ()
@@ -309,17 +311,17 @@ let rmdir t dirname = (
   ) files in
   let command = sprintf "RMD %s\r\n" dirname in
   let () = log "%s" command in
-  let ()_ = fprintf t.fout "%s" command ; flush t.fout ; in
+  let () = fprintf t.fout "%s" command ; flush t.fout ; in
   let line = input_line t.fin in
   let () = log "%s\n" line in 
     ()
 )
 
 let mv t old_name new_name = (
-  let ()_ = fprintf t.fout "RNFR %s\r\n" old_name ; flush t.fout ; in
+  let () = fprintf t.fout "RNFR %s\r\n" old_name ; flush t.fout ; in
   let line = input_line t.fin in
   let () = log "%s\n" line in 
-  let ()_ = fprintf t.fout "RNTO %s\r\n" new_name ; flush t.fout ; in 
+  let () = fprintf t.fout "RNTO %s\r\n" new_name ; flush t.fout ; in 
   let line = input_line t.fin in
   let () = log "%s\n" line in
     ()
@@ -335,10 +337,12 @@ let connect ~host ~port ~user ~password  = (
   let server =
     let line = input_line fin in
     let () = log "%s\n" line in
+    let reg_ftp_android = Str.regexp "220 FTPServer ready.*" in
     let reg_vsftpd = Str.regexp "220.*FTP server.*" in
     let reg_coreftp = Str.regexp "220-Core FTP Server.*" in
       if Str.string_match reg_vsftpd line 0 then ( log "server is vsFTP\n" ; VsFTPd )
       else if Str.string_match reg_coreftp line 0 then ( log "server is CoreFTP\n" ; Core_FTP )
+      else if Str.string_match reg_ftp_android line 0 then ( log "server is CoreFTP\n" ; FTP_android )
       else ( log "cannot identify server, please fix that\n" ; Unknown )
   in
     
