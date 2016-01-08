@@ -215,20 +215,6 @@ let list t dirname = (
     ) data
 )
 
-let help () = 
-  printf "
-help                 : this help
-list                 : list files in remote directory
-ls                   : list files in remote directory
-pwd                  : print remote current working directory
-cwd <arg>            : change remote working direcytory
-rm <arg>             : remove file
-mkdir <arg>          : make directory
-rmdir <arg>          : remove directory (must be empty)
-mv <arg1> <arg2>     : move file
-put <local> <remote> : put file
-get <remote> <local> : get file
-" ; flush stdout
 
 let connect ~host ~port ~user ~password  = (
   let (addr:Unix.sockaddr) = Unix.ADDR_INET ( host , port ) in
@@ -275,74 +261,5 @@ let echo b = (
   )
   else
     log_print := None
-)
-
-let print_list t d = (
-  let data = list t d in
-  let data = List.sort ~cmp:( fun f1 f2 ->
-    match f1.is_directory,f2.is_directory with
-      | true,true 
-      | false,false ->	  String.compare f1.name f2.name
-      | true,false -> (-1)
-      | false,true -> (+1)
-  ) data in
-    List.iter ( fun f ->
-      log "%s %s\n" ( if f.is_directory then "d" else " ") f.name 
-    ) data ;
-)
-
-let print_compare t l d = (
-  let () = log "======== COMPARE %s and %s\n" l d in
-  let data = dir_compare t l d in
-  let string_of_status d = match d with
-    | Identical -> " = "
-    | Different -> " # "
-    | Only_remote -> " r "
-    | Only_local -> " l "
-  in
-    List.iter ( fun (name,status) ->
-      log "%s %s\n" (string_of_status status) name
-    ) data ;
-)
-
-let interactive_loop t = (
-  (* log_print := Some ( fun s -> printf "%s" s ; flush stdout )  ; *)
-  let () = echo true in
-  let rec r () = 
-    let () = printf ">" ; flush stdout ; in
-    let line = read_line () in
-    let line = String.strip line in
-    let line = if String.starts_with line "#" then "" else line in
-    let () = match (String.nsplit line " ")  with
-      | ["list"] 
-      | ["ls"] -> print_list t "."
-      | ["list";d] 
-      | ["ls";d] -> print_list t d
-(*
-      | ["ls";d] -> let _ = list t "" in ()
-      | ["list";d] -> let _ = list t "" in ()
-*)
-      | ["help"] -> help () 
-      | ["pwd"] -> let ret = pwd t in printf ">>%s\n" ret ; ()
-      | ["cd";d] -> let _ = command t false ["CWD";d] in ()
-      | ["cwd";d] -> let _ = command t false ["CWD";d] in ()
-      | ["get";filename] -> let _ = get_file t filename filename in ()
-      | ["get";distant_filename;local_filename] -> let _ = get_file t distant_filename local_filename in ()
-      | ["put";filename] -> let _ = put_file t filename filename in ()
-      | ["put";local_filename;distant_filename] -> let _ = put_file t local_filename distant_filename in ()
-      | ["mv";old_name;new_name] -> let _ = mv t old_name new_name in ()
-      | ["rm";name] -> let _ = rm t name  in ()
-      | ["rmdir";name] -> let _ = rmdir t name  in ()
-      | ["mkdir";name] -> let _ = mkdir t name  in ()
-      | ["echo";"on"] -> echo true 
-      | ["echo";"off"] -> echo false
-      | ["compare";local;distant] -> let _ = print_compare t local distant in ()
-      (* | l ->  let _ = command t false l  in () *)
-      | [] -> ()
-      | s -> log "-> unknown command '%s'\n" line ; flush stdout ; 
-    in
-      r ()
-  in
-    r()
 )
   
