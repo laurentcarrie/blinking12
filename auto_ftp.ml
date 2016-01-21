@@ -376,4 +376,78 @@ let dir_compare t local distant = (
       (List.map ( fun f -> (f.name,Only_remote)) distant_files)
 )
 
+class a_scheme =
+object(self)
+  method pad s i =
+    for j=i to (String.length s - 1) do
+      s.[i] <- '0'
+    done
+  method strip (s:string) =
+    try
+      String.index s '0'
+    with
+      | Not_found -> String.length s - 1
+end ;;
+
+
+
+let ask_password ~host ~port ~user = (
+  try
+    let () = printf "host:%s\nport:%d\nuser:%s\nenter password : " host port user ; flush stdout ; in
+    let rec secretly_read_password acc = 
+      try
+	let c = input_char stdin in
+	  if c = '\n' then (String.implode (List.rev acc)) else secretly_read_password(c::acc)
+      with
+	| End_of_file -> printf "end of file\n" ; flush stdout ; (String.implode (List.rev acc))
+    in
+    let term_init = Unix.tcgetattr Unix.stdin in
+      (* let term_noecho = { term_init with Unix.c_echo = false } in *)
+    let () = Unix.tcsetattr Unix.stdin Unix.TCSANOW { term_init with Unix.c_echo=false} in
+    let password = secretly_read_password []  in
+    let () = Unix.tcsetattr Unix.stdin Unix.TCSADRAIN { term_init with Unix.c_echo=true}  in 
+      password
+  with
+    | e -> (
+	let term_init = Unix.tcgetattr Unix.stdin in
+	let () = Unix.tcsetattr Unix.stdin Unix.TCSADRAIN { term_init with Unix.c_echo=true}  in 
+	  raise e
+      )
+)
+
+type password = {
+  password : string ;
+  time : float ;
+}
+
+let store_password ~host ~port ~user ~filename ~key ~password = (
+  let a_scheme = new a_scheme in
+  let t = Cryptokit.Cipher.aes  ~pad:a_scheme key Cryptokit.Cipher.Encrypt in
+  let crypted = Cryptokit.transform_string t (Marshal.to_string { password=password;time=Unix.time()} []) in
+  let () = Std.output_file ~text:crypted ~filename in
+    ()
+)
+
+let retrieve_password ~host ~port ~user = (
+  let filename = sprintf "%s.%d.%s" host port user in
+  let key = "hello.world12345" in
+  let () = assert(String.length key = 16) in
+  let rec read_password () = 
+    try
+      let a_scheme = new a_scheme in
+      let t = Cryptokit.Cipher.aes  ~pad:a_scheme key Cryptokit.Cipher.Decrypt in
+      let crypted = Std.input_file filename in
+      let data = Marshal.from_string (Cryptokit.transform_string t crypted) 0 in
+      let () = store_password ~host ~port ~user ~filename ~key ~password:data.password in
+      let () = printf "timestamp : %f (now is %f)\n" data.time (Unix.time()) in
+      let () = if ( Unix.time() -. data.time > 60. ) then failwith "password too old" in
+	data.password
+    with
+      | _ -> ( 
+	  let password = ask_password ~host ~port ~user in
+	  let () = store_password ~host ~port ~user ~filename ~key ~password in read_password () 
+	)
+  in
+    read_password ()
+)
   

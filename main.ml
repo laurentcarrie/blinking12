@@ -17,10 +17,12 @@ let usage () =
 let _ = 
   try
     let (host,port,user,password) = match Sys.argv with
-      | [|_;host;port;user;password|] ->  (
-	  let host = Unix.gethostbyname host in
+      | [|_;host_string;port;user|] ->  (
+	  let host = Unix.gethostbyname host_string in
 	  let addr = host.Unix.h_addr_list.(0) in
-	    addr , int_of_string port,user,password)
+	  let port = int_of_string port in
+	  let password = Auto_ftp.retrieve_password ~host:host_string ~port ~user in
+	    addr,port,user,password)
       | _ -> failwith "bad command line"
     in
     let _ = Auto_ftp.echo true in
