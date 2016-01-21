@@ -1,5 +1,7 @@
 type t
 
+exception Connection_failed
+
 type file = {
   name : string ;
   access : string ;
@@ -35,5 +37,6 @@ val nlst : t -> string -> string
 
 
 val retrieve_password : host:string -> port:int -> user:string -> string
+val cancel_password : host:string -> port:int -> user:string -> unit
 
 val command : t -> bool -> string list -> string

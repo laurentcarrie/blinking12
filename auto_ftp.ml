@@ -4,6 +4,9 @@ open ExtString
 
 let (//) = Filename.concat
 
+exception Connection_failed
+exception Password_too_old
+
 type server = 
     | VsFTPd
     | Core_FTP
@@ -347,6 +350,7 @@ let connect ~host ~port ~user ~password  = (
   let rec read () =
     try
       let line = input_line t.fin in
+      let () = if ( String.starts_with line "530" ) then raise Connection_failed else () in
 	log "--> %s\n" line  ; line
     with
       | End_of_file -> ""
@@ -391,6 +395,10 @@ end ;;
 
 
 
+let forge_password_filename ~host ~port ~user = (
+  sprintf "%s.%d.%s" host port user 
+)
+
 let ask_password ~host ~port ~user = (
   try
     let () = printf "host:%s\nport:%d\nuser:%s\nenter password : " host port user ; flush stdout ; in
@@ -420,6 +428,7 @@ type password = {
   time : float ;
 }
 
+
 let store_password ~host ~port ~user ~filename ~key ~password = (
   let a_scheme = new a_scheme in
   let t = Cryptokit.Cipher.aes  ~pad:a_scheme key Cryptokit.Cipher.Encrypt in
@@ -429,7 +438,7 @@ let store_password ~host ~port ~user ~filename ~key ~password = (
 )
 
 let retrieve_password ~host ~port ~user = (
-  let filename = sprintf "%s.%d.%s" host port user in
+  let filename = forge_password_filename ~host ~port ~user in
   let key = "hello.world12345" in
   let () = assert(String.length key = 16) in
   let rec read_password () = 
@@ -439,10 +448,11 @@ let retrieve_password ~host ~port ~user = (
       let crypted = Std.input_file filename in
       let data = Marshal.from_string (Cryptokit.transform_string t crypted) 0 in
       let () = store_password ~host ~port ~user ~filename ~key ~password:data.password in
-      let () = printf "timestamp : %f (now is %f)\n" data.time (Unix.time()) in
-      let () = if ( Unix.time() -. data.time > 60. ) then failwith "password too old" in
+	(* let () = printf "timestamp : %f (now is %f)\n" data.time (Unix.time()) in *)
+      let () = if ( Unix.time() -. data.time > 60. ) then raise Password_too_old else () in
 	data.password
     with
+      | Password_too_old
       | _ -> ( 
 	  let password = ask_password ~host ~port ~user in
 	  let () = store_password ~host ~port ~user ~filename ~key ~password in read_password () 
@@ -451,3 +461,12 @@ let retrieve_password ~host ~port ~user = (
     read_password ()
 )
   
+let cancel_password ~host ~port ~user = (
+  let filename = forge_password_filename ~host ~port ~user in
+    try
+      Unix.unlink filename ;
+      ()
+    with
+      | _ -> ()
+
+)
