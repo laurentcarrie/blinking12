@@ -446,7 +446,8 @@ type password = {
 
 
 let store_password ~host ~port ~user ~filename ~key ~password = (
-  let a_scheme = new a_scheme in
+  (* let a_scheme = new a_scheme in *)
+  let a_scheme = Cryptokit.Padding._8000 in
   let t = Cryptokit.Cipher.aes  ~pad:a_scheme key Cryptokit.Cipher.Encrypt in
   let crypted = Cryptokit.transform_string t (Marshal.to_string { password=password;time=Unix.time()} []) in
   let () = Std.output_file ~text:crypted ~filename in
@@ -459,7 +460,8 @@ let retrieve_password ~host ~port ~user = (
   let () = assert(String.length key = 16) in
   let rec read_password () = 
     try
-      let a_scheme = new a_scheme in
+      (* let a_scheme = new a_scheme in *)
+      let a_scheme = Cryptokit.Padding._8000 in
       let t = Cryptokit.Cipher.aes  ~pad:a_scheme key Cryptokit.Cipher.Decrypt in
       let crypted = Std.input_file filename in
       let data = Marshal.from_string (Cryptokit.transform_string t crypted) 0 in
