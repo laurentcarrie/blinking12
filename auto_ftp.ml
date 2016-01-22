@@ -216,6 +216,18 @@ let list t dirname = (
     ) data
 )
 
+let status t path = (
+  let path = if Filename.is_relative path then "." // path else path in
+  let dirname = Filename.dirname path in
+  let files = list t dirname in
+    try
+      Some ( List.find ( fun f -> 
+	log "? match %s and %s\n" path (dirname//f.name) ;
+	path = dirname // f.name ) files )
+    with
+      | Not_found -> None
+)
+
 let get_dir t distant_dir local_dir = (
   log "get_dir '%s' '%s'\n" distant_dir local_dir ;
   let rec r distant_dir local_dir = (
@@ -303,18 +315,22 @@ let stat t = (
 )
 
 
-let rmdir t dirname = (
+let rec rmdir t dirname = (
   let files = list t dirname in
+  let (files,dirs) = List.partition ( fun f -> not f.is_directory ) files in
   let () = log "%d files to delete\n" (List.length files) in
+  let () = log "%d dirs to delete\n" (List.length dirs) in
   let () = List.iter ( fun f ->
     let () = log "delete %s\n" ( dirname // f.name ) in
       rm t ( dirname // f.name )
   ) files in
+  let () = List.iter ( fun f -> rmdir t ( dirname // f.name )) dirs in
   let command = sprintf "RMD %s\r\n" dirname in
   let () = log "%s" command in
   let ()_ = fprintf t.fout "%s" command ; flush t.fout ; in
   let line = input_line t.fin in
   let () = log "%s\n" line in 
+  let () = Option.may ( fun _ -> Unix.sleep 1 ; rmdir t dirname ) ( status t dirname ) in
     ()
 )
 
@@ -449,7 +465,7 @@ let retrieve_password ~host ~port ~user = (
       let data = Marshal.from_string (Cryptokit.transform_string t crypted) 0 in
       let () = store_password ~host ~port ~user ~filename ~key ~password:data.password in
 	(* let () = printf "timestamp : %f (now is %f)\n" data.time (Unix.time()) in *)
-      let () = if ( Unix.time() -. data.time > 60. ) then raise Password_too_old else () in
+      let () = if ( Unix.time() -. data.time > 600. ) then raise Password_too_old else () in
 	data.password
     with
       | Password_too_old

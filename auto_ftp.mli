@@ -35,6 +35,7 @@ val put_dir : t -> string -> string -> unit
 val log : ('a, unit, string, unit) format4 -> 'a
 val nlst : t -> string -> string
 
+val status : t -> string -> file option
 
 val retrieve_password : host:string -> port:int -> user:string -> string
 val cancel_password : host:string -> port:int -> user:string -> unit

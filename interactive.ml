@@ -67,6 +67,11 @@ let interactive_loop t = (
       | ["ls"] -> print_list t "."
       | ["list";d] 
       | ["ls";d] -> print_list t d
+      | ["file";f] -> (match Auto_ftp.status t f with
+	  | None -> printf "Not found\n" 
+	  | Some f -> printf "%s %s\n" (if f.Auto_ftp.is_directory then "d" else " ") f.Auto_ftp.name
+	)
+
 (*
       | ["ls";d] -> let _ = list t "" in ()
       | ["list";d] -> let _ = list t "" in ()
