@@ -175,7 +175,7 @@ let get_file t distant_filename local_filename = (
     let rec r () =
       try
 	let nb = input fin buffer 0 max in
-	let () = printf "got %d bytes\n" nb ; flush stdout ; in
+	(* let () = printf "got %d bytes\n" nb ; flush stdout ; in *)
 	  if nb=0 then ( close_out fwrite ; () ) else (
 	    output fwrite buffer 0 nb ;
 	    r ()
