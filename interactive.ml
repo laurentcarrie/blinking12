@@ -51,7 +51,7 @@ let print_compare t l d = (
 
 let interactive_loop t = (
   (* log_print := Some ( fun s -> printf "%s" s ; flush stdout )  ; *)
-  let _ = Auto_ftp.echo false in
+  (* let _ = Auto_ftp.echo false in *)
   let rec r () = 
     let () = printf ">" ; flush stdout ; in
     let line = read_line () in

@@ -41,6 +41,12 @@ let log fs =
     | None -> ksprintf ( fun _ -> ()) fs
     | Some f -> ksprintf f fs
   ) 
+
+let int_of_string s = 
+  try
+    int_of_string s
+  with
+    | e -> printf "could not convert to int : '%s'\n" s ; flush stdout ; raise e
   
 
 let port_of_answer line = (
@@ -86,31 +92,75 @@ let echo b = (
     previous
 )
 
-let put_file t local_filename distant_filename = (
-  let () = log "put_file %s %s\n" local_filename distant_filename in
-  let (fin,fout) = streams_for_pasv t in
-  let () = fprintf t.fout "STOR %s\r\n" distant_filename ; flush t.fout in
-  let line = input_line t.fin in 
-  let () = log "%s\n" line in
-  let fread = open_in_bin local_filename in
+let mkdir t filename = (
+  let ()_ = fprintf t.fout "MKD %s\r\n" filename ; flush t.fout ; in
+  let line = input_line t.fin in
+  let () = log "%s\n" line in 
+    ()
+)
+
+let sha1_of_file path = (
+  let hash = Cryptokit.Hash.sha256 () in
+  let fread = open_in_bin path in
   let max = 1024 in
   let buffer = String.create max in
   let rec r () =
     try
       let nb = input fread buffer 0 max in
-	if nb=0 then ( close_out fout ; () ) else (
-	  output fout buffer 0 nb ;
+	if nb=0 then ( close_in fread ; () ) else (
+	  hash#add_substring buffer 0 nb ;
 	  r ()
 	)
     with
       | End_of_file -> failwith "bad end"
   in
-  let () = r() in
-  let line = input_line t.fin in 
-  let () = log "%s\n" line in 
-    ()
+  let () = r () in
+  let b64 = Cryptokit.Base64.encode_compact () in
+  let () = b64#put_string hash#result in
+  let () = b64#finish in 
+  let data = b64#get_string in
+    data
 )
+
+let get_data_from_distant_file t distant_filename = (
+  
+  let (fin,fout) = streams_for_pasv t in
+  let command = sprintf "RETR %s\r\n" distant_filename in
+  let () = log "%s" command in
+  let () = fprintf t.fout "%s" command ; flush t.fout in
+  let line = input_line t.fin in 
+  let () = log "%s\n" line in
+  let () = 
+    let code = int_of_string (fst(String.split line " ")) in
+      match code with
+	| 550 -> failwith "retrieve file failed"
+	| 150 -> ()
+	| 226 -> ()
+	| l -> printf "code %d\n" l ; failwith (sprintf "unnamaged return code : %d" l)
+  in
+  let max = 1024 in
+  let buffer = String.create max in
+  let rec r acc =
+    try
+      let nb = input fin buffer 0 max in
+	if nb=0 then ( acc  ) else (
+	  let acc = acc ^ (String.sub buffer 0 nb) in
+	    r acc
+	)
+    with
+      | End_of_file -> failwith "bad end"
+  in
+  let data = r "" in
+  let _ = input_line t.fin in 
+(*
+  let () = close_in fin in
+  let () = close_out fout in
+*)
+    data
+)
+
 let get_file t distant_filename local_filename = (
+  
   let (fin,fout) = streams_for_pasv t in
   let command = sprintf "RETR %s\r\n" distant_filename in
   let () = log "%s" command in
@@ -135,6 +185,88 @@ let get_file t distant_filename local_filename = (
   let line = input_line t.fin in 
   let () = log "%s\n" line in
     ()
+)
+
+
+let put_data_in_distant_file t distant_filename data = (
+  try
+    let (fin,fout) = streams_for_pasv t in
+    let () = fprintf t.fout "STOR %s\r\n" distant_filename ; flush t.fout in
+    let line = input_line t.fin in 
+    let () = log "%s\n" line in
+    let _ = output fout data 0 (String.length data) in
+    let () = close_out fout in
+      ()
+  with
+    | e -> printf "Erreur in put_data_in_distant_file %s\n" distant_filename ; flush stdout ; raise e
+)
+
+let rec really_put_file t local_filename distant_filename = (
+  try
+  let () = log "really_put_file %s %s\n" local_filename distant_filename in
+  let do_write () =  (
+    let (fin,fout) = streams_for_pasv t in
+    let () = fprintf t.fout "STOR %s\r\n" distant_filename ; flush t.fout in
+    let line = input_line t.fin in 
+    let () = log "%s\n" line in
+    let fread = try
+	open_in_bin local_filename 
+      with
+	| e -> printf "Error while opening %s\n" local_filename ; flush stdout ; raise e
+    in
+    let max = 1024 in
+    let buffer = String.create max in
+    let rec r () =
+      try
+	let nb = input fread buffer 0 max in
+	  if nb=0 then ( close_out fout ; close_in fread ; () ) else (
+	    output fout buffer 0 nb ;
+	    r ()
+	  )
+      with
+	| End_of_file -> failwith "bad end"
+    in
+    let () = r() in
+      ()
+  )
+  in
+    do_write () 
+  with
+    | e -> printf "Erreur in really_put_file %s %s\n" local_filename distant_filename ; flush stdout ; raise e
+)
+  
+let put_file t local_filename distant_filename = (
+  let sha1s =  (
+    try 
+      let data = get_data_from_distant_file t ".sha1"  in
+	List.map ( fun line -> let (a,b) = String.split line " " in b,a ) (String.nsplit data "\n")
+    with
+      | e -> log "%s\n%s\n" ".sha1 not found" (Printexc.to_string e) ; [] 
+  )
+  in
+  let local_sha1 = sha1_of_file local_filename in
+  let () = log "local_sha1 for %s = %s\n" local_filename local_sha1 in
+  let do_it = 
+    try
+      let distant_sha1 = List.assoc distant_filename sha1s in
+      let different = local_sha1 <> distant_sha1 in
+      let () = log "sha1s are different ? %b\n" different in
+	different
+    with
+      | Not_found -> log "%s" "distant sha1 not found\n" ; true
+  in
+  let () = if do_it then (
+    let () = really_put_file t local_filename distant_filename in
+    let sha1s = (distant_filename,local_sha1)::(List.remove_assoc distant_filename sha1s) in
+    let data = String.join "\n" ( List.map ( fun (f,sha1) -> sprintf "%s %s" sha1 f) sha1s ) in
+      put_data_in_distant_file t ".sha1" data
+  )
+    else (
+      log "SKIPPED because same sha1 : %s -> %s\n" local_filename distant_filename 
+    ) in
+
+    ()
+
 )
 
 
@@ -247,16 +379,9 @@ let get_dir t distant_dir local_dir = (
     r distant_dir local_dir
 )
 
-let mkdir t filename = (
-  let ()_ = fprintf t.fout "MKD %s\r\n" filename ; flush t.fout ; in
-  let line = input_line t.fin in
-  let () = log "%s\n" line in 
-    ()
-)
-
-
 let put_dir t local_dir distant_dir  = (
   log "put_dir '%s' '%s'\n" distant_dir local_dir ;
+  (* let () = get_dir t (distant_dir // ".sha1" ) (local_dir // ".sha1") in *)
   let rec r local_dir distant_dir  = (
     let () = mkdir t distant_dir in
     let files = Array.to_list ( Sys.readdir local_dir ) in

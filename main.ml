@@ -16,19 +16,48 @@ let usage () =
 
 let _ = 
   try
-    let (host,host_string,port,user,password) = match Sys.argv with
-      | [|_;host_string;port;user|] ->  (
-	  let host = Unix.gethostbyname host_string in
-	  let addr = host.Unix.h_addr_list.(0) in
-	  let port = int_of_string port in
-	  let password = Auto_ftp.retrieve_password ~host:host_string ~port ~user in
-	    addr,host_string,port,user,password)
-      | _ -> failwith "bad command line"
+    let opt = OptParse.OptParser.make () in
+
+    let opt_host = 
+      let o = OptParse.Opt.value_option "" None (fun a -> a) (fun e _ -> Printexc.to_string e) in
+      let () = OptParse.OptParser.add opt ~long_name:"hostname" ~help:"hostname" o in
+	o
     in
-    let _ = Auto_ftp.echo true in
+	
+    let opt_user = 
+      let o = OptParse.Opt.value_option "" None (fun a -> a) (fun e _ -> Printexc.to_string e) in
+      let () = OptParse.OptParser.add opt ~long_name:"user" ~help:"user" o in 
+	o
+    in
+
+    let opt_port = 
+      let o = OptParse.Opt.value_option "" None (fun a -> int_of_string a) (fun e _ -> Printexc.to_string e) in
+      let () = OptParse.OptParser.add opt ~long_name:"port" ~help:"port" o in
+	o 
+    in
+
+    let opt_echo = 
+      let o = OptParse.StdOpt.store_true () in
+      let () = OptParse.OptParser.add opt ~long_name:"echo" ~help:"echo" o in
+	o
+    in
+      
+    let _ = OptParse.OptParser.parse_argv opt in
+
+    let host_string = OptParse.Opt.get opt_host in
+    let port = OptParse.Opt.get opt_port in
+    let user = OptParse.Opt.get opt_user in
+      
+    let host = Unix.gethostbyname host_string in
+    let addr = host.Unix.h_addr_list.(0) in
+    let password = Auto_ftp.retrieve_password ~host:host_string ~port ~user in
+      
+    let echo = OptParse.Opt.get opt_echo in
+      
+    let _ = Auto_ftp.echo echo in
     let t = 
       try 
-	Auto_ftp.connect ~host ~port ~user ~password 
+	Auto_ftp.connect ~host:addr ~port ~user ~password 
       with
 	| Auto_ftp.Connection_failed -> Auto_ftp.cancel_password ~host:host_string ~port ~user ; raise Auto_ftp.Connection_failed
 	    
@@ -36,3 +65,4 @@ let _ =
       Interactive.interactive_loop t
   with
     | e -> printf "%s\n" (Printexc.to_string e) ; usage () ; exit 1
+	
