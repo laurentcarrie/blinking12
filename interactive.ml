@@ -53,7 +53,7 @@ let interactive_loop t = (
   (* log_print := Some ( fun s -> printf "%s" s ; flush stdout )  ; *)
   (* let _ = Auto_ftp.echo false in *)
   let rec r () = 
-    let () = printf ">" ; flush stdout ; in
+    let () = printf "" ; flush stdout ; in
     let line = read_line () in
     let line = String.strip line in
     let line = if String.starts_with line "#" then "" else line in
@@ -62,7 +62,9 @@ let interactive_loop t = (
       let _ = Unix.system command in
 	""
     ) else line in
-    let () = match (String.nsplit line " ")  with
+    let command = String.nsplit line " " in
+    let command = List.filter ( fun s -> String.strip s <> "") command in
+    let () = match command  with
       | ["list"] 
       | ["ls"] -> print_list t "."
       | ["list";d] 
@@ -100,7 +102,7 @@ let interactive_loop t = (
       | ["nlst";d] -> let s = Auto_ftp.nlst t d in printf "%s\n" s
       | ["stat"] -> let s = Auto_ftp.stat t in printf "%s\n" s
       | [] -> ()
-      | s -> log "-> unknown command '%s'\n" line ; flush stdout ; 
+      | s -> log "-> unknown command \n%s\n" (String.join "\n" (List.map (fun s -> sprintf "[%s]" s) s) ) ; flush stdout ; 
     in
       r ()
   in

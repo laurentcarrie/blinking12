@@ -1,5 +1,6 @@
 open Printf
 open ExtList
+module S = String
 open ExtString
 
 let (//) = Filename.concat
@@ -103,7 +104,7 @@ let sha1_of_file path = (
   let hash = Cryptokit.Hash.sha256 () in
   let fread = open_in_bin path in
   let max = 1024 in
-  let buffer = String.create max in
+  let buffer = S.create max in
   let rec r () =
     try
       let nb = input fread buffer 0 max in
@@ -160,31 +161,34 @@ let get_data_from_distant_file t distant_filename = (
 )
 
 let get_file t distant_filename local_filename = (
-  
-  let (fin,fout) = streams_for_pasv t in
-  let command = sprintf "RETR %s\r\n" distant_filename in
-  let () = log "%s" command in
-  let () = fprintf t.fout "%s" command ; flush t.fout in
-  let line = input_line t.fin in 
-  let () = log "%s\n" line in 
-  let () = log "writing to '%s'\n" local_filename in
-  let fwrite = open_out_bin local_filename in
-  let max = 1024 in
-  let buffer = String.create max in
-  let rec r () =
-    try
-      let nb = input fin buffer 0 max in
-	if nb=0 then ( close_out fwrite ; () ) else (
-	  output fwrite buffer 0 nb ;
-	  r ()
-	)
-    with
-      | End_of_file -> failwith "bad end"
-  in
-  let () = r() in
-  let line = input_line t.fin in 
-  let () = log "%s\n" line in
-    ()
+  try
+    let (fin,fout) = streams_for_pasv t in
+    let command = sprintf "RETR %s\r\n" distant_filename in
+    let () = log "%s" command in
+    let () = fprintf t.fout "%s" command ; flush t.fout in
+    let line = input_line t.fin in 
+    let () = log "%s\n" line in 
+    let () = log "writing to '%s'\n" local_filename in
+    let fwrite = open_out_bin local_filename in
+    let max = 1024*280 in
+    let buffer = String.create max in
+    let rec r () =
+      try
+	let nb = input fin buffer 0 max in
+	let () = printf "got %d bytes\n" nb ; flush stdout ; in
+	  if nb=0 then ( close_out fwrite ; () ) else (
+	    output fwrite buffer 0 nb ;
+	    r ()
+	  )
+      with
+	| End_of_file -> failwith "bad end"
+    in
+    let () = r() in
+    let line = input_line t.fin in 
+    let () = log "%s\n" line in
+      ()
+  with
+    | e -> printf "Error in get_file %s %s\n" distant_filename local_filename ; flush stdout ; raise e
 )
 
 
