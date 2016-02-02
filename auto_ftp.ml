@@ -233,28 +233,16 @@ let rec really_put_file t local_filename distant_filename = (
     in
     let max = 1024 in
     let buffer = String.create max in
-(*
+
     let rec r () =
-      try
-	let nb = input fread buffer 0 max in
-	  if nb=0 then ( close_out fout ; close_in fread ; () ) else (
-	    output fout buffer 0 nb ;
-	    r ()
-	  )
-      with
-	| End_of_file -> failwith "bad end"
+      let nb = input fread buffer 0 max in
+	if nb=0 then ( close_out fout ; close_in fread ; () ) else (
+	  output fout buffer 0 nb ;
+	  r ()
+	)
     in
     let () = r() in
-*)
-
-    let encore = ref true in
-      while !encore do 
-	let nb = input fread buffer 0 max in
-	  if nb=0 then ( close_out fout ; close_in fread ; encore:=false ) else (
-	    (* output fout buffer 0 nb ; *)
-	    ()
-	  )
-      done ;
+      ()
   )
   in
     do_write () 
@@ -262,7 +250,7 @@ let rec really_put_file t local_filename distant_filename = (
     | e -> printf "Erreur in really_put_file %s %s\n" local_filename distant_filename ; flush stdout ; raise e
 )
   
-let put_file t local_filename distant_filename = (
+let put_file_with_sha1 t local_filename distant_filename = (
   let sha1s =  (
     try 
       let data = get_data_from_distant_file t ".sha1"  in
@@ -296,6 +284,12 @@ let put_file t local_filename distant_filename = (
 
 )
 
+let put_file ~use_sha1 t local_filename distant_filename = (
+  if use_sha1 then 
+    put_file_with_sha1 t local_filename distant_filename
+  else
+    really_put_file t local_filename distant_filename 
+)
 
 
 let command t has_data (args:string list) = (
@@ -406,7 +400,7 @@ let get_dir t distant_dir local_dir = (
     r distant_dir local_dir
 )
 
-let put_dir t local_dir distant_dir  = (
+let put_dir ~use_sha1 t local_dir distant_dir  = (
   log "put_dir '%s' '%s'\n" distant_dir local_dir ;
   (* let () = get_dir t (distant_dir // ".sha1" ) (local_dir // ".sha1") in *)
   let rec r local_dir distant_dir  = (
@@ -414,17 +408,17 @@ let put_dir t local_dir distant_dir  = (
     let files = Array.to_list ( Sys.readdir local_dir ) in
       List.iter ( fun f ->
 	let () = log "E: '%s'\n" f in
-	if Sys.is_directory (local_dir//f) then (
-	  r (local_dir//f)  (distant_dir//f) 
-	) else (
-	  put_file t (local_dir//f) (distant_dir//f)
-	)
+	  if Sys.is_directory (local_dir//f) then (
+	    r (local_dir//f)  (distant_dir//f) 
+	  ) else (
+	    put_file ~use_sha1 t (local_dir//f) (distant_dir//f)
+	  )
       ) files
   )
   in
     r local_dir distant_dir
 )
-
+  
 
 let nlst t dirname = (
   let data = command t true ["NLST";dirname] in

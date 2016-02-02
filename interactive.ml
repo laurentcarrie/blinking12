@@ -82,14 +82,29 @@ let interactive_loop t = (
       | ["pwd"] -> let ret = Auto_ftp.pwd t in printf "%s\n" ret ; ()
       | ["cd";d] -> let _ = Auto_ftp.command t false ["CWD";d] in ()
       | ["cwd";d] -> let _ = Auto_ftp.command t false ["CWD";d] in ()
+      | ["get_file";filename]
       | ["get";filename] -> let _ = Auto_ftp.get_file t filename filename in ()
+      | ["get_file";filename;local]
       | ["get";filename;local] -> let _ = Auto_ftp.get_file t filename local in ()
       | ["get_dir";distant_dirname] -> let _ = Auto_ftp.get_dir t distant_dirname distant_dirname in ()
       | ["get_dir";distant_dirname;local_dirname] -> let _ = Auto_ftp.get_dir t distant_dirname local_dirname in ()
-      | ["put_dir";local_dirname] -> let _ = Auto_ftp.put_dir t local_dirname local_dirname in ()
-      | ["put_dir";local_dirname;distant_dirname] -> let _ = Auto_ftp.put_dir t local_dirname distant_dirname in ()
-      | ["put";filename] -> let _ = Auto_ftp.put_file t filename filename in ()
-      | ["put";local_filename;distant_filename] -> let _ = Auto_ftp.put_file t local_filename distant_filename in ()
+
+      | ["put_dir_no_sha1";local_dirname] -> let _ = Auto_ftp.put_dir ~use_sha1:false t local_dirname local_dirname in ()
+      | ["put_dir_no_sha1";local_dirname;distant_dirname] -> let _ = Auto_ftp.put_dir ~use_sha1:false t local_dirname distant_dirname in ()
+
+      | ["put_dir";local_dirname] -> let _ = Auto_ftp.put_dir ~use_sha1:true t local_dirname local_dirname in ()
+      | ["put_dir";local_dirname;distant_dirname] -> let _ = Auto_ftp.put_dir ~use_sha1:true t local_dirname distant_dirname in ()
+
+      | ["put_file_no_sha1";filename]
+      | ["put_no_sha1";filename] -> let _ = Auto_ftp.put_file ~use_sha1:false t filename filename in ()
+      | ["put_file_no_sha1";local_filename;distant_filename] 
+      | ["put_no_sha1";local_filename;distant_filename] -> let _ = Auto_ftp.put_file ~use_sha1:false t local_filename distant_filename in ()
+
+      | ["put_file";filename]
+      | ["put";filename] -> let _ = Auto_ftp.put_file ~use_sha1:true t filename filename in ()
+      | ["put_file";local_filename;distant_filename] 
+      | ["put";local_filename;distant_filename] -> let _ = Auto_ftp.put_file ~use_sha1:true t local_filename distant_filename in ()
+
       | ["mv";old_name;new_name] -> let _ = Auto_ftp.mv t old_name new_name in ()
       | ["rm";name] -> let _ = Auto_ftp.rm t name  in ()
       | ["rmdir";name] -> let _ = Auto_ftp.rmdir t name  in ()
