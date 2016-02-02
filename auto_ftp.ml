@@ -170,20 +170,33 @@ let get_file t distant_filename local_filename = (
     let () = log "%s\n" line in 
     let () = log "writing to '%s'\n" local_filename in
     let fwrite = open_out_bin local_filename in
+
     let max = 1024*280 in
     let buffer = String.create max in
-    let rec r () =
-      try
+
+    let implem_iteratif = false in
+
+    let () = if implem_iteratif then (
+      let encore = ref true in
+	while !encore do 
+	  let nb = input fin buffer 0 max in
+	    if nb=0 then ( close_out fwrite ; encore:=false ) else (
+	      output fwrite buffer 0 nb ; 
+	      ()
+	    )
+	done ;
+    ) else (
+      let rec r () =
 	let nb = input fin buffer 0 max in
-	(* let () = printf "got %d bytes\n" nb ; flush stdout ; in *)
 	  if nb=0 then ( close_out fwrite ; () ) else (
 	    output fwrite buffer 0 nb ;
 	    r ()
 	  )
-      with
-	| End_of_file -> failwith "bad end"
-    in
-    let () = r() in
+      in
+      let () = r() in
+	()
+    ) in
+
     let line = input_line t.fin in 
     let () = log "%s\n" line in
       ()
@@ -220,6 +233,7 @@ let rec really_put_file t local_filename distant_filename = (
     in
     let max = 1024 in
     let buffer = String.create max in
+(*
     let rec r () =
       try
 	let nb = input fread buffer 0 max in
@@ -231,7 +245,16 @@ let rec really_put_file t local_filename distant_filename = (
 	| End_of_file -> failwith "bad end"
     in
     let () = r() in
-      ()
+*)
+
+    let encore = ref true in
+      while !encore do 
+	let nb = input fread buffer 0 max in
+	  if nb=0 then ( close_out fout ; close_in fread ; encore:=false ) else (
+	    (* output fout buffer 0 nb ; *)
+	    ()
+	  )
+      done ;
   )
   in
     do_write () 
