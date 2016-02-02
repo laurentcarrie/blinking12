@@ -116,6 +116,7 @@ let interactive_loop t = (
       | ["nlst"] -> let s = Auto_ftp.nlst t"." in printf "%s\n" s
       | ["nlst";d] -> let s = Auto_ftp.nlst t d in printf "%s\n" s
       | ["stat"] -> let s = Auto_ftp.stat t in printf "%s\n" s
+      | ["build-sha1"] -> let _ = Auto_ftp.build_distant_sha1 t "" "" in ()
       | [] -> ()
       | s -> log "-> unknown command \n%s\n" (String.join "\n" (List.map (fun s -> sprintf "[%s]" s) s) ) ; flush stdout ; 
     in

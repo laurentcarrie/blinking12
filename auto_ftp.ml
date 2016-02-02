@@ -123,7 +123,7 @@ let sha1_of_file path = (
     data
 )
 
-let get_data_from_distant_file t distant_filename = (
+let walk_in_distant_file t distant_filename (acc:'a) (walk:'a -> string -> 'a) : 'a = (
   
   let (fin,fout) = streams_for_pasv t in
   let command = sprintf "RETR %s\r\n" distant_filename in
@@ -141,23 +141,23 @@ let get_data_from_distant_file t distant_filename = (
   in
   let max = 1024 in
   let buffer = String.create max in
-  let rec r acc =
+  let rec r acc=
     try
       let nb = input fin buffer 0 max in
-	if nb=0 then ( acc  ) else (
-	  let acc = acc ^ (String.sub buffer 0 nb) in
+	if nb=0 then (acc) else (
+	  let acc = walk  acc (String.sub buffer 0 nb) in
 	    r acc
 	)
     with
       | End_of_file -> failwith "bad end"
   in
-  let data = r "" in
+  let acc = r acc  in
   let _ = input_line t.fin in 
 (*
   let () = close_in fin in
   let () = close_out fout in
 *)
-    data
+    acc
 )
 
 let get_file t distant_filename local_filename = (
@@ -218,12 +218,23 @@ let put_data_in_distant_file t distant_filename data = (
     | e -> printf "Erreur in put_data_in_distant_file %s\n" distant_filename ; flush stdout ; raise e
 )
 
+let mv t old_name new_name = (
+  let ()_ = fprintf t.fout "RNFR %s\r\n" old_name ; flush t.fout ; in
+  let line = input_line t.fin in
+  let () = log "%s\n" line in 
+  let ()_ = fprintf t.fout "RNTO %s\r\n" new_name ; flush t.fout ; in 
+  let line = input_line t.fin in
+  let () = log "%s\n" line in
+    ()
+)
+ 
 let rec really_put_file t local_filename distant_filename = (
   try
   let () = log "really_put_file %s %s\n" local_filename distant_filename in
+  let distant_filename_tmp = distant_filename ^ ".tmp" in
   let do_write () =  (
     let (fin,fout) = streams_for_pasv t in
-    let () = fprintf t.fout "STOR %s\r\n" distant_filename ; flush t.fout in
+    let () = fprintf t.fout "STOR %s\r\n" distant_filename_tmp ; flush t.fout in
     let line = input_line t.fin in 
     let () = log "%s\n" line in
     let fread = try
@@ -242,6 +253,7 @@ let rec really_put_file t local_filename distant_filename = (
 	)
     in
     let () = r() in
+    let () = mv t distant_filename_tmp distant_filename in
       ()
   )
   in
@@ -253,7 +265,8 @@ let rec really_put_file t local_filename distant_filename = (
 let put_file_with_sha1 t local_filename distant_filename = (
   let sha1s =  (
     try 
-      let data = get_data_from_distant_file t ".sha1"  in
+      let walk acc s = acc ^ s in
+      let data = walk_in_distant_file t ".sha1"  "" walk in
 	List.map ( fun line -> let (a,b) = String.split line " " in b,a ) (String.nsplit data "\n")
     with
       | e -> log "%s\n%s\n" ".sha1 not found" (Printexc.to_string e) ; [] 
@@ -480,16 +493,7 @@ let rec rmdir t dirname = (
     ()
 )
 
-let mv t old_name new_name = (
-  let ()_ = fprintf t.fout "RNFR %s\r\n" old_name ; flush t.fout ; in
-  let line = input_line t.fin in
-  let () = log "%s\n" line in 
-  let ()_ = fprintf t.fout "RNTO %s\r\n" new_name ; flush t.fout ; in 
-  let line = input_line t.fin in
-  let () = log "%s\n" line in
-    ()
-)
-  
+ 
 
 
 let connect ~host ~port ~user ~password  = (
@@ -632,5 +636,52 @@ let cancel_password ~host ~port ~user = (
       ()
     with
       | _ -> ()
+
+)
+
+let build_distant_sha1 t local_dirname distant_dirname = (
+
+  let get_sha1 f = 
+    let hash = Cryptokit.Hash.sha256 () in
+    let rec walk () s =
+      hash#add_string s ;
+      ()
+    in
+    let () = walk_in_distant_file t f () walk in
+    let b64 = Cryptokit.Base64.encode_compact () in
+    let () = b64#put_string hash#result in
+    let () = b64#finish in 
+    let data = b64#get_string in
+      data
+  in
+    
+  let rec walk acc d = (
+    (* heuristique ... *)
+    let l = String.nsplit (String.strip (nlst t d)) "\n" in
+    let l = List.map String.strip l in
+    let () = List.iteri ( fun i s -> log "---> %d [%s]\n" i s) l in
+    let acc = match l with
+	| [] -> failwith "internal error, nlst returns empty"
+	| hd::[] -> (
+	    (* file *) 
+	    let sha1 = get_sha1 d in
+	      (* log "sha1 : %s\n" (get_sha1 d) ;*)
+	      (sha1,d) :: acc
+	  )
+	| l -> (
+	    let l = List.map String.strip l in
+	    let l = List.filter ( fun s -> s <> "." && s <> ".." && s <> d) l in
+	    let acc = List.fold_left ( fun acc s ->
+	      walk acc (d//s)
+	    ) acc l  in
+	      acc
+	  )
+    in
+      acc
+  ) in
+  let acc = walk [] distant_dirname in
+  let data = String.join "\n" (List.map ( fun (sha1,path) -> sprintf "%s %s" sha1 path) acc ) in
+    put_data_in_distant_file t ".sha1" data ;
+    []
 
 )
