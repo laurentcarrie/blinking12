@@ -1,5 +1,7 @@
 type t
 
+exception Connection_failed
+
 type file = {
   name : string ;
   access : string ;
@@ -28,9 +30,14 @@ val echo : bool -> bool
 val dir_compare : t -> string -> string -> (string*diff_status) list
 val get_file : t -> string -> string -> unit
 val get_dir : t -> string -> string -> unit
-val put_file : t -> string -> string -> unit
-val put_dir : t -> string -> string -> unit
+val put_file : use_sha1:bool -> t -> string -> string -> unit
+val put_dir : use_sha1:bool -> t -> string -> string -> unit
 val log : ('a, unit, string, unit) format4 -> 'a
 val nlst : t -> string -> string
+
+val status : t -> string -> file option
+
+val retrieve_password : host:string -> port:int -> user:string -> string
+val cancel_password : host:string -> port:int -> user:string -> unit
 
 val command : t -> bool -> string list -> string

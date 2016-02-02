@@ -1,8 +1,12 @@
 open Printf
 open ExtList
+module S = String
 open ExtString
 
 let (//) = Filename.concat
+
+exception Connection_failed
+exception Password_too_old
 
 type server = 
     | VsFTPd
@@ -39,6 +43,12 @@ let log fs =
     | None -> ksprintf ( fun _ -> ()) fs
     | Some f -> ksprintf f fs
   ) 
+
+let int_of_string s = 
+  try
+    int_of_string s
+  with
+    | e -> printf "could not convert to int : '%s'\n" s ; flush stdout ; raise e
   
 
 let port_of_answer line = (
@@ -84,57 +94,203 @@ let echo b = (
     previous
 )
 
-let put_file t local_filename distant_filename = (
-  let () = log "put_file %s %s\n" local_filename distant_filename in
-  let (fin,fout) = streams_for_pasv t in
-  let () = fprintf t.fout "STOR %s\r\n" distant_filename ; flush t.fout in
-  let line = input_line t.fin in 
-  let () = log "%s\n" line in
-  let fread = open_in_bin local_filename in
+let mkdir t filename = (
+  let ()_ = fprintf t.fout "MKD %s\r\n" filename ; flush t.fout ; in
+  let line = input_line t.fin in
+  let () = log "%s\n" line in 
+    ()
+)
+
+let sha1_of_file path = (
+  let hash = Cryptokit.Hash.sha256 () in
+  let fread = open_in_bin path in
   let max = 1024 in
-  let buffer = String.create max in
+  let buffer = S.create max in
   let rec r () =
     try
       let nb = input fread buffer 0 max in
-	if nb=0 then ( close_out fout ; () ) else (
-	  output fout buffer 0 nb ;
+	if nb=0 then ( close_in fread ; () ) else (
+	  hash#add_substring buffer 0 nb ;
 	  r ()
 	)
     with
       | End_of_file -> failwith "bad end"
   in
-  let () = r() in
-  let line = input_line t.fin in 
-  let () = log "%s\n" line in 
-    ()
+  let () = r () in
+  let b64 = Cryptokit.Base64.encode_compact () in
+  let () = b64#put_string hash#result in
+  let () = b64#finish in 
+  let data = b64#get_string in
+    data
 )
-let get_file t distant_filename local_filename = (
+
+let get_data_from_distant_file t distant_filename = (
+  
   let (fin,fout) = streams_for_pasv t in
   let command = sprintf "RETR %s\r\n" distant_filename in
   let () = log "%s" command in
   let () = fprintf t.fout "%s" command ; flush t.fout in
   let line = input_line t.fin in 
-  let () = log "%s\n" line in 
-  let () = log "writing to '%s'\n" local_filename in
-  let fwrite = open_out_bin local_filename in
+  let () = log "%s\n" line in
+  let () = 
+    let code = int_of_string (fst(String.split line " ")) in
+      match code with
+	| 550 -> failwith "retrieve file failed"
+	| 150 -> ()
+	| 226 -> ()
+	| l -> printf "code %d\n" l ; failwith (sprintf "unnamaged return code : %d" l)
+  in
   let max = 1024 in
   let buffer = String.create max in
-  let rec r () =
+  let rec r acc =
     try
       let nb = input fin buffer 0 max in
-	if nb=0 then ( close_out fwrite ; () ) else (
-	  output fwrite buffer 0 nb ;
-	  r ()
+	if nb=0 then ( acc  ) else (
+	  let acc = acc ^ (String.sub buffer 0 nb) in
+	    r acc
 	)
     with
       | End_of_file -> failwith "bad end"
   in
-  let () = r() in
-  let line = input_line t.fin in 
-  let () = log "%s\n" line in
-    ()
+  let data = r "" in
+  let _ = input_line t.fin in 
+(*
+  let () = close_in fin in
+  let () = close_out fout in
+*)
+    data
 )
 
+let get_file t distant_filename local_filename = (
+  try
+    let (fin,fout) = streams_for_pasv t in
+    let command = sprintf "RETR %s\r\n" distant_filename in
+    let () = log "%s" command in
+    let () = fprintf t.fout "%s" command ; flush t.fout in
+    let line = input_line t.fin in 
+    let () = log "%s\n" line in 
+    let () = log "writing to '%s'\n" local_filename in
+    let fwrite = open_out_bin local_filename in
+
+    let max = 1024*280 in
+    let buffer = String.create max in
+
+    let implem_iteratif = false in
+
+    let () = if implem_iteratif then (
+      let encore = ref true in
+	while !encore do 
+	  let nb = input fin buffer 0 max in
+	    if nb=0 then ( close_out fwrite ; encore:=false ) else (
+	      output fwrite buffer 0 nb ; 
+	      ()
+	    )
+	done ;
+    ) else (
+      let rec r () =
+	let nb = input fin buffer 0 max in
+	  if nb=0 then ( close_out fwrite ; () ) else (
+	    output fwrite buffer 0 nb ;
+	    r ()
+	  )
+      in
+      let () = r() in
+	()
+    ) in
+
+    let line = input_line t.fin in 
+    let () = log "%s\n" line in
+      ()
+  with
+    | e -> printf "Error in get_file %s %s\n" distant_filename local_filename ; flush stdout ; raise e
+)
+
+
+let put_data_in_distant_file t distant_filename data = (
+  try
+    let (fin,fout) = streams_for_pasv t in
+    let () = fprintf t.fout "STOR %s\r\n" distant_filename ; flush t.fout in
+    let line = input_line t.fin in 
+    let () = log "%s\n" line in
+    let _ = output fout data 0 (String.length data) in
+    let () = close_out fout in
+      ()
+  with
+    | e -> printf "Erreur in put_data_in_distant_file %s\n" distant_filename ; flush stdout ; raise e
+)
+
+let rec really_put_file t local_filename distant_filename = (
+  try
+  let () = log "really_put_file %s %s\n" local_filename distant_filename in
+  let do_write () =  (
+    let (fin,fout) = streams_for_pasv t in
+    let () = fprintf t.fout "STOR %s\r\n" distant_filename ; flush t.fout in
+    let line = input_line t.fin in 
+    let () = log "%s\n" line in
+    let fread = try
+	open_in_bin local_filename 
+      with
+	| e -> printf "Error while opening %s\n" local_filename ; flush stdout ; raise e
+    in
+    let max = 1024 in
+    let buffer = String.create max in
+
+    let rec r () =
+      let nb = input fread buffer 0 max in
+	if nb=0 then ( close_out fout ; close_in fread ; () ) else (
+	  output fout buffer 0 nb ;
+	  r ()
+	)
+    in
+    let () = r() in
+      ()
+  )
+  in
+    do_write () 
+  with
+    | e -> printf "Erreur in really_put_file %s %s\n" local_filename distant_filename ; flush stdout ; raise e
+)
+  
+let put_file_with_sha1 t local_filename distant_filename = (
+  let sha1s =  (
+    try 
+      let data = get_data_from_distant_file t ".sha1"  in
+	List.map ( fun line -> let (a,b) = String.split line " " in b,a ) (String.nsplit data "\n")
+    with
+      | e -> log "%s\n%s\n" ".sha1 not found" (Printexc.to_string e) ; [] 
+  )
+  in
+  let local_sha1 = sha1_of_file local_filename in
+  let () = log "local_sha1 for %s = %s\n" local_filename local_sha1 in
+  let do_it = 
+    try
+      let distant_sha1 = List.assoc distant_filename sha1s in
+      let different = local_sha1 <> distant_sha1 in
+      let () = log "sha1s are different ? %b\n" different in
+	different
+    with
+      | Not_found -> log "%s" "distant sha1 not found\n" ; true
+  in
+  let () = if do_it then (
+    let () = really_put_file t local_filename distant_filename in
+    let sha1s = (distant_filename,local_sha1)::(List.remove_assoc distant_filename sha1s) in
+    let data = String.join "\n" ( List.map ( fun (f,sha1) -> sprintf "%s %s" sha1 f) sha1s ) in
+      put_data_in_distant_file t ".sha1" data
+  )
+    else (
+      log "SKIPPED because same sha1 : %s -> %s\n" local_filename distant_filename 
+    ) in
+
+    ()
+
+)
+
+let put_file ~use_sha1 t local_filename distant_filename = (
+  if use_sha1 then 
+    put_file_with_sha1 t local_filename distant_filename
+  else
+    really_put_file t local_filename distant_filename 
+)
 
 
 let command t has_data (args:string list) = (
@@ -215,6 +371,18 @@ let list t dirname = (
     ) data
 )
 
+let status t path = (
+  let path = if Filename.is_relative path then "." // path else path in
+  let dirname = Filename.dirname path in
+  let files = list t dirname in
+    try
+      Some ( List.find ( fun f -> 
+	log "? match %s and %s\n" path (dirname//f.name) ;
+	path = dirname // f.name ) files )
+    with
+      | Not_found -> None
+)
+
 let get_dir t distant_dir local_dir = (
   log "get_dir '%s' '%s'\n" distant_dir local_dir ;
   let rec r distant_dir local_dir = (
@@ -234,32 +402,25 @@ let get_dir t distant_dir local_dir = (
     r distant_dir local_dir
 )
 
-let mkdir t filename = (
-  let () = fprintf t.fout "MKD %s\r\n" filename ; flush t.fout ; in
-  let line = input_line t.fin in
-  let () = log "%s\n" line in 
-    ()
-)
-
-
-let put_dir t local_dir distant_dir  = (
+let put_dir ~use_sha1 t local_dir distant_dir  = (
   log "put_dir '%s' '%s'\n" distant_dir local_dir ;
+  (* let () = get_dir t (distant_dir // ".sha1" ) (local_dir // ".sha1") in *)
   let rec r local_dir distant_dir  = (
     let () = mkdir t distant_dir in
     let files = Array.to_list ( Sys.readdir local_dir ) in
       List.iter ( fun f ->
 	let () = log "E: '%s'\n" f in
-	if Sys.is_directory (local_dir//f) then (
-	  r (local_dir//f)  (distant_dir//f) 
-	) else (
-	  put_file t (local_dir//f) (distant_dir//f)
-	)
+	  if Sys.is_directory (local_dir//f) then (
+	    r (local_dir//f)  (distant_dir//f) 
+	  ) else (
+	    put_file ~use_sha1 t (local_dir//f) (distant_dir//f)
+	  )
       ) files
   )
   in
     r local_dir distant_dir
 )
-
+  
 
 let nlst t dirname = (
   let data = command t true ["NLST";dirname] in
@@ -302,18 +463,22 @@ let stat t = (
 )
 
 
-let rmdir t dirname = (
+let rec rmdir t dirname = (
   let files = list t dirname in
+  let (files,dirs) = List.partition ( fun f -> not f.is_directory ) files in
   let () = log "%d files to delete\n" (List.length files) in
+  let () = log "%d dirs to delete\n" (List.length dirs) in
   let () = List.iter ( fun f ->
     let () = log "delete %s\n" ( dirname // f.name ) in
       rm t ( dirname // f.name )
   ) files in
+  let () = List.iter ( fun f -> rmdir t ( dirname // f.name )) dirs in
   let command = sprintf "RMD %s\r\n" dirname in
   let () = log "%s" command in
   let () = fprintf t.fout "%s" command ; flush t.fout ; in
   let line = input_line t.fin in
   let () = log "%s\n" line in 
+  let () = Option.may ( fun _ -> Unix.sleep 1 ; rmdir t dirname ) ( status t dirname ) in
     ()
 )
 
@@ -351,6 +516,7 @@ let connect ~host ~port ~user ~password  = (
   let rec read () =
     try
       let line = input_line t.fin in
+      let () = if ( String.starts_with line "530" ) then raise Connection_failed else () in
 	log "--> %s\n" line  ; line
     with
       | End_of_file -> ""
@@ -380,4 +546,95 @@ let dir_compare t local distant = (
       (List.map ( fun f -> (f.name,Only_remote)) distant_files)
 )
 
+class a_scheme =
+object(self)
+  method pad s i =
+    for j=i to (String.length s - 1) do
+      s.[i] <- '0'
+    done
+  method strip (s:string) =
+    try
+      String.index s '0'
+    with
+      | Not_found -> String.length s - 1
+end ;;
+
+
+
+let forge_password_filename ~host ~port ~user = (
+  sprintf "%s.%d.%s" host port user 
+)
+
+let ask_password ~host ~port ~user = (
+  try
+    let () = printf "host:%s\nport:%d\nuser:%s\nenter password : " host port user ; flush stdout ; in
+    let rec secretly_read_password acc = 
+      try
+	let c = input_char stdin in
+	  if c = '\n' then (String.implode (List.rev acc)) else secretly_read_password(c::acc)
+      with
+	| End_of_file -> printf "end of file\n" ; flush stdout ; (String.implode (List.rev acc))
+    in
+    let term_init = Unix.tcgetattr Unix.stdin in
+      (* let term_noecho = { term_init with Unix.c_echo = false } in *)
+    let () = Unix.tcsetattr Unix.stdin Unix.TCSANOW { term_init with Unix.c_echo=false} in
+    let password = secretly_read_password []  in
+    let () = Unix.tcsetattr Unix.stdin Unix.TCSADRAIN { term_init with Unix.c_echo=true}  in 
+      password
+  with
+    | e -> (
+	let term_init = Unix.tcgetattr Unix.stdin in
+	let () = Unix.tcsetattr Unix.stdin Unix.TCSADRAIN { term_init with Unix.c_echo=true}  in 
+	  raise e
+      )
+)
+
+type password = {
+  password : string ;
+  time : float ;
+}
+
+
+let store_password ~host ~port ~user ~filename ~key ~password = (
+  (* let a_scheme = new a_scheme in *)
+  let a_scheme = Cryptokit.Padding._8000 in
+  let t = Cryptokit.Cipher.aes  ~pad:a_scheme key Cryptokit.Cipher.Encrypt in
+  let crypted = Cryptokit.transform_string t (Marshal.to_string { password=password;time=Unix.time()} []) in
+  let () = Std.output_file ~text:crypted ~filename in
+    ()
+)
+
+let retrieve_password ~host ~port ~user = (
+  let filename = forge_password_filename ~host ~port ~user in
+  let key = "hello.world12345" in
+  let () = assert(String.length key = 16) in
+  let rec read_password () = 
+    try
+      (* let a_scheme = new a_scheme in *)
+      let a_scheme = Cryptokit.Padding._8000 in
+      let t = Cryptokit.Cipher.aes  ~pad:a_scheme key Cryptokit.Cipher.Decrypt in
+      let crypted = Std.input_file filename in
+      let data = Marshal.from_string (Cryptokit.transform_string t crypted) 0 in
+      let () = store_password ~host ~port ~user ~filename ~key ~password:data.password in
+	(* let () = printf "timestamp : %f (now is %f)\n" data.time (Unix.time()) in *)
+      let () = if ( Unix.time() -. data.time > 600. ) then raise Password_too_old else () in
+	data.password
+    with
+      | Password_too_old
+      | _ -> ( 
+	  let password = ask_password ~host ~port ~user in
+	  let () = store_password ~host ~port ~user ~filename ~key ~password in read_password () 
+	)
+  in
+    read_password ()
+)
   
+let cancel_password ~host ~port ~user = (
+  let filename = forge_password_filename ~host ~port ~user in
+    try
+      Unix.unlink filename ;
+      ()
+    with
+      | _ -> ()
+
+)

@@ -51,9 +51,9 @@ let print_compare t l d = (
 
 let interactive_loop t = (
   (* log_print := Some ( fun s -> printf "%s" s ; flush stdout )  ; *)
-  let _ = Auto_ftp.echo false in
+  (* let _ = Auto_ftp.echo false in *)
   let rec r () = 
-    let () = printf ">" ; flush stdout ; in
+    let () = printf "" ; flush stdout ; in
     let line = read_line () in
     let line = String.strip line in
     let line = if String.starts_with line "#" then "" else line in
@@ -62,11 +62,18 @@ let interactive_loop t = (
       let _ = Unix.system command in
 	""
     ) else line in
-    let () = match (String.nsplit line " ")  with
+    let command = String.nsplit line " " in
+    let command = List.filter ( fun s -> String.strip s <> "") command in
+    let () = match command  with
       | ["list"] 
       | ["ls"] -> print_list t "."
       | ["list";d] 
       | ["ls";d] -> print_list t d
+      | ["file";f] -> (match Auto_ftp.status t f with
+	  | None -> printf "Not found\n" 
+	  | Some f -> printf "%s %s\n" (if f.Auto_ftp.is_directory then "d" else " ") f.Auto_ftp.name
+	)
+
 (*
       | ["ls";d] -> let _ = list t "" in ()
       | ["list";d] -> let _ = list t "" in ()
@@ -75,14 +82,29 @@ let interactive_loop t = (
       | ["pwd"] -> let ret = Auto_ftp.pwd t in printf "%s\n" ret ; ()
       | ["cd";d] -> let _ = Auto_ftp.command t false ["CWD";d] in ()
       | ["cwd";d] -> let _ = Auto_ftp.command t false ["CWD";d] in ()
+      | ["get_file";filename]
       | ["get";filename] -> let _ = Auto_ftp.get_file t filename filename in ()
+      | ["get_file";filename;local]
       | ["get";filename;local] -> let _ = Auto_ftp.get_file t filename local in ()
       | ["get_dir";distant_dirname] -> let _ = Auto_ftp.get_dir t distant_dirname distant_dirname in ()
       | ["get_dir";distant_dirname;local_dirname] -> let _ = Auto_ftp.get_dir t distant_dirname local_dirname in ()
-      | ["put_dir";local_dirname] -> let _ = Auto_ftp.put_dir t local_dirname local_dirname in ()
-      | ["put_dir";local_dirname;distant_dirname] -> let _ = Auto_ftp.put_dir t local_dirname distant_dirname in ()
-      | ["put";filename] -> let _ = Auto_ftp.put_file t filename filename in ()
-      | ["put";local_filename;distant_filename] -> let _ = Auto_ftp.put_file t local_filename distant_filename in ()
+
+      | ["put_dir_no_sha1";local_dirname] -> let _ = Auto_ftp.put_dir ~use_sha1:false t local_dirname local_dirname in ()
+      | ["put_dir_no_sha1";local_dirname;distant_dirname] -> let _ = Auto_ftp.put_dir ~use_sha1:false t local_dirname distant_dirname in ()
+
+      | ["put_dir";local_dirname] -> let _ = Auto_ftp.put_dir ~use_sha1:true t local_dirname local_dirname in ()
+      | ["put_dir";local_dirname;distant_dirname] -> let _ = Auto_ftp.put_dir ~use_sha1:true t local_dirname distant_dirname in ()
+
+      | ["put_file_no_sha1";filename]
+      | ["put_no_sha1";filename] -> let _ = Auto_ftp.put_file ~use_sha1:false t filename filename in ()
+      | ["put_file_no_sha1";local_filename;distant_filename] 
+      | ["put_no_sha1";local_filename;distant_filename] -> let _ = Auto_ftp.put_file ~use_sha1:false t local_filename distant_filename in ()
+
+      | ["put_file";filename]
+      | ["put";filename] -> let _ = Auto_ftp.put_file ~use_sha1:true t filename filename in ()
+      | ["put_file";local_filename;distant_filename] 
+      | ["put";local_filename;distant_filename] -> let _ = Auto_ftp.put_file ~use_sha1:true t local_filename distant_filename in ()
+
       | ["mv";old_name;new_name] -> let _ = Auto_ftp.mv t old_name new_name in ()
       | ["rm";name] -> let _ = Auto_ftp.rm t name  in ()
       | ["rmdir";name] -> let _ = Auto_ftp.rmdir t name  in ()
@@ -95,7 +117,7 @@ let interactive_loop t = (
       | ["nlst";d] -> let s = Auto_ftp.nlst t d in printf "%s\n" s
       | ["stat"] -> let s = Auto_ftp.stat t in printf "%s\n" s
       | [] -> ()
-      | s -> log "-> unknown command '%s'\n" line ; flush stdout ; 
+      | s -> log "-> unknown command \n%s\n" (String.join "\n" (List.map (fun s -> sprintf "[%s]" s) s) ) ; flush stdout ; 
     in
       r ()
   in
