@@ -1,6 +1,9 @@
-.PHONY: build clean install
+.PHONY: build clean install doc
 
 .DEFAULT: build
+
+srcdir = $(absname $(dir $(CWD)))
+prefix = $(srcdir)/install
 
 USE_OCAMLFIND = true
 
@@ -30,16 +33,21 @@ src[]=
 
 prog = $(OCamlProgram auto-ftp,$(src))
 
-build : install/bin/auto-ftp
+build : $(prefix)/bin/auto-ftp
 
-mkdir -p install/bin
+mkdir -p $(prefix)/bin
 
-install/bin/auto-ftp : auto-ftp
+$(prefix)/bin/auto-ftp : auto-ftp
 	cp $< $@
 
 clean :
 	rm -f $(prog)
 	rm -f *.o *.cmo *.cmx *.cma *.cmi *.omc .omakedb*
-	rm -rf install
+	rm -rf $(prefix)
 
 
+println($"scrdir : $(srcdir)")
+
+doc :
+	mkdir -p $(prefix)/share/doc/html
+	ocamlfind ocamldoc -d $(prefix)/share/doc/html -html auto_ftp.mli

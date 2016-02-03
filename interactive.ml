@@ -49,6 +49,74 @@ let print_compare t l d = (
     flush stdout
 )
 
+let help commands t _ = (
+  List.iter ( fun (name,_,h) ->
+    printf "%s\n   %s\n" name h
+  ) commands
+)
+
+let commands : (string * (Auto_ftp.t->string list->unit) * string) list = (
+  let commands = [
+    "ls",(fun t l -> match l with | [] -> print_list t "." | hd::_ -> print_list t hd ), "ls distant dir" ;
+
+    "echo",(
+      fun _ args -> 
+	let _= match args with 
+	  | ["on"] -> let _ = Auto_ftp.echo true  in ()
+	  | ["off"] -> let _ = Auto_ftp.echo false in ()
+	  | _ -> log "%s" "bad arg for echo"
+	in ()
+    ),"set echo [on|off]" ;
+    
+    "pwd",(fun t _ -> let ret = Auto_ftp.pwd t in printf "%s\n" ret ; ()) , "print distant working directory" ;
+
+    "cd",(fun t args -> 
+      let () = match args with 
+	| hd::[] -> Auto_ftp.cwd t hd 
+	| _ -> (log "%s" "bad args for cd")
+      in
+	()
+    ),"change working directory" ;
+
+    
+    "get",(fun t args ->
+      let () = match args with
+	| filename::[] -> let _ = Auto_ftp.get_file t filename filename in ()
+	| distant::local::[] -> let _ = Auto_ftp.get_file t distant local in ()
+	| _ -> (log "%s" "bad args for get")
+      in ()
+    ),"get [filename | distant_name local_name] : gets a file" ;
+
+    "get_dir",(fun t args ->
+      let () = match args with
+	| dirname::[] -> let _ = Auto_ftp.get_dir t dirname dirname in ()
+	| distant_dirname::local_dirname::[] -> let _ = Auto_ftp.get_dir t distant_dirname local_dirname in ()
+	| _ -> (log "%s" "bad args for get_dir")
+      in  ()
+    ),"get_dir [dirname | distant_dirname local_dirname] : recursively gets a directory, using sha1 stored to optimize" ;
+
+    "put_dir_no_sha1",(fun t args ->
+      match args with
+	| dirname::[] ->  let _ = Auto_ftp.put_dir ~use_sha1:false t dirname dirname in ()
+	| local_dirname::distant_dirname::[] -> let _ = Auto_ftp.put_dir ~use_sha1:false t local_dirname distant_dirname in ()
+	| _ -> (log "%s" "bad args for put_dir_no_sha1")
+    ), "recursively put directory, ignoring sha1 hashes (really puts all files)" ;
+						  
+    "put_dir",(fun t args ->
+      match args with
+	| dirname::[] ->  let _ = Auto_ftp.put_dir ~use_sha1:false t dirname dirname in ()
+	| local_dirname::distant_dirname::[] -> let _ = Auto_ftp.put_dir ~use_sha1:true t local_dirname distant_dirname in ()
+	| _ -> (log "%s" "bad args for put_dir_no_sha1")
+    ), "recursively put directory, using sha1 hashes to prevent useless puts" ;
+						  
+  ]
+  in
+    ("help",help commands,"help")::commands
+)
+
+  
+
+
 let interactive_loop t = (
   (* log_print := Some ( fun s -> printf "%s" s ; flush stdout )  ; *)
   (* let _ = Auto_ftp.echo false in *)
@@ -64,64 +132,15 @@ let interactive_loop t = (
     ) else line in
     let command = String.nsplit line " " in
     let command = List.filter ( fun s -> String.strip s <> "") command in
-    let () = match command  with
-      | ["list"] 
-      | ["ls"] -> print_list t "."
-      | ["list";d] 
-      | ["ls";d] -> print_list t d
-      | ["file";f] -> (match Auto_ftp.status t f with
-	  | None -> printf "Not found\n" 
-	  | Some f -> printf "%s %s\n" (if f.Auto_ftp.is_directory then "d" else " ") f.Auto_ftp.name
-	)
-
-(*
-      | ["ls";d] -> let _ = list t "" in ()
-      | ["list";d] -> let _ = list t "" in ()
-*)
-      | ["help"] -> help () 
-      | ["pwd"] -> let ret = Auto_ftp.pwd t in printf "%s\n" ret ; ()
-      | ["cd";d] -> let _ = Auto_ftp.command t false ["CWD";d] in ()
-      | ["cwd";d] -> let _ = Auto_ftp.command t false ["CWD";d] in ()
-      | ["get_file";filename]
-      | ["get";filename] -> let _ = Auto_ftp.get_file t filename filename in ()
-      | ["get_file";filename;local]
-      | ["get";filename;local] -> let _ = Auto_ftp.get_file t filename local in ()
-      | ["get_dir";distant_dirname] -> let _ = Auto_ftp.get_dir t distant_dirname distant_dirname in ()
-      | ["get_dir";distant_dirname;local_dirname] -> let _ = Auto_ftp.get_dir t distant_dirname local_dirname in ()
-
-      | ["put_dir_no_sha1";local_dirname] -> let _ = Auto_ftp.put_dir ~use_sha1:false t local_dirname local_dirname in ()
-      | ["put_dir_no_sha1";local_dirname;distant_dirname] -> let _ = Auto_ftp.put_dir ~use_sha1:false t local_dirname distant_dirname in ()
-
-      | ["put_dir";local_dirname] -> let _ = Auto_ftp.put_dir ~use_sha1:true t local_dirname local_dirname in ()
-      | ["put_dir";local_dirname;distant_dirname] -> let _ = Auto_ftp.put_dir ~use_sha1:true t local_dirname distant_dirname in ()
-
-      | ["put_file_no_sha1";filename]
-      | ["put_no_sha1";filename] -> let _ = Auto_ftp.put_file ~use_sha1:false t filename filename in ()
-      | ["put_file_no_sha1";local_filename;distant_filename] 
-      | ["put_no_sha1";local_filename;distant_filename] -> let _ = Auto_ftp.put_file ~use_sha1:false t local_filename distant_filename in ()
-
-      | ["put_file";filename]
-      | ["put";filename] -> let _ = Auto_ftp.put_file ~use_sha1:true t filename filename in ()
-      | ["put_file";local_filename;distant_filename] 
-      | ["put";local_filename;distant_filename] -> let _ = Auto_ftp.put_file ~use_sha1:true t local_filename distant_filename in ()
-
-      | ["mv";old_name;new_name] -> let _ = Auto_ftp.mv t old_name new_name in ()
-      | ["rm";name] -> let _ = Auto_ftp.rm t name  in ()
-      | ["rmdir";name] -> let _ = Auto_ftp.rmdir t name  in ()
-      | ["mkdir";name] -> let _ = Auto_ftp.mkdir t name  in ()
-      | ["echo";"on"] -> let _ =  Auto_ftp.echo true in ()
-      | ["echo";"off"] -> let _ = Auto_ftp.echo false in ()
-      | ["compare";local;distant] -> let _ = print_compare t local distant in ()
-      (* | l ->  let _ = command t false l  in () *)
-      | ["nlst"] -> let s = Auto_ftp.nlst t"." in printf "%s\n" s
-      | ["nlst";d] -> let s = Auto_ftp.nlst t d in printf "%s\n" s
-      | ["stat"] -> let s = Auto_ftp.stat t in printf "%s\n" s
-      | ["build-sha1"] -> let _ = Auto_ftp.build_distant_sha1 t "" "" in ()
-      | [] -> ()
-      | s -> log "-> unknown command \n%s\n" (String.join "\n" (List.map (fun s -> sprintf "[%s]" s) s) ) ; flush stdout ; 
+    let () = try
+	let (_,f,_) = List.find ( fun (name,f,_) -> name = List.hd command ) commands in
+	  f t (List.tl command)
+      with
+	| Not_found -> printf "no such command ; '%s'\n" (List.hd command)
     in
       r ()
   in
-    r()
+
+    r ()
 )
   

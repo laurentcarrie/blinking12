@@ -346,6 +346,7 @@ let cwd t dir = (
 )
 
 let list t dirname = (
+  let () = log "list '%s'\n" dirname in
   let data = command t true ["LIST";dirname] in
   let data = String.nsplit data "\n" in
   let data = List.filter ( fun line -> not (String.starts_with line "total") ) data in
