@@ -108,7 +108,20 @@ let commands : (string * (Auto_ftp.t->string list->unit) * string) list = (
 	| local_dirname::distant_dirname::[] -> let _ = Auto_ftp.put_dir ~use_sha1:true t local_dirname distant_dirname in ()
 	| _ -> (log "%s" "bad args for put_dir_no_sha1")
     ), "recursively put directory, using sha1 hashes to prevent useless puts" ;
-						  
+
+
+    "put",(fun t args -> match args with
+      | filename::[] -> let _ = Auto_ftp.put_file ~use_sha1:true t filename filename in ()
+      | local::distant::[] ->  let _ = Auto_ftp.put_file ~use_sha1:true t local distant in ()
+      | _ -> (log "%s" "bad args for put")
+    ),"put file, using sha1 hash to prevent useless write" ;
+				  
+    "put_no_sha1",(fun t args -> match args with
+      | filename::[] -> let _ = Auto_ftp.put_file ~use_sha1:false t filename filename in ()
+      | local::distant::[] ->  let _ = Auto_ftp.put_file ~use_sha1:false t local distant in ()
+      | _ -> (log "%s" "bad args for put_no_sha1")
+    ),"put file, ignoring sha1 hash (always write file)" ;
+				  
   ]
   in
     ("help",help commands,"help")::commands
