@@ -1,0 +1,53 @@
+.PHONY: build clean install doc
+
+.DEFAULT: build
+
+srcdir = $(absname $(dir $(CWD)))
+prefix = $(srcdir)/install
+
+USE_OCAMLFIND = true
+
+OCAMLPACKS[] =
+	extlib
+	cryptokit
+	unix
+	str
+
+NATIVE_ENABLED = true
+BYTE_ENABLED = false
+
+#
+# Various options
+#
+OCAMLFLAGS    += -g -warn-error all
+# OCAMLCFLAGS   +=
+# OCAMLOPTFLAGS +=
+# OCAML_LINK_FLAGS +=
+# OCAML_BYTE_LINK_FLAGS +=
+# OCAML_NATIVE_LINK_FLAGS +=
+
+src[]=
+	auto_ftp
+	interactive
+	main
+
+prog = $(OCamlProgram auto-ftp,$(src))
+
+build : $(prefix)/bin/auto-ftp
+
+mkdir -p $(prefix)/bin
+
+$(prefix)/bin/auto-ftp : auto-ftp
+	cp $< $@
+
+clean :
+	rm -f $(prog)
+	rm -f *.o *.cmo *.cmx *.cma *.cmi *.omc .omakedb*
+	rm -rf $(prefix)
+
+
+println($"scrdir : $(srcdir)")
+
+doc :
+	mkdir -p $(prefix)/share/doc/html
+	ocamlfind ocamldoc -d $(prefix)/share/doc/html -html auto_ftp.mli

@@ -5,3 +5,8 @@
 *.cmx
 *.swp
 auto-ftp
+install/
+.omakedb
+*.omc
+auto-ftp.opt
+.omakedb.lock

@@ -27,6 +27,7 @@ val rm : t -> string -> unit
 val rmdir : t -> string -> unit
 val mkdir : t -> string -> unit
 val echo : bool -> bool
+val build_distant_sha1 : t -> string -> string -> (string*diff_status) list
 val dir_compare : t -> string -> string -> (string*diff_status) list
 val get_file : t -> string -> string -> unit
 val get_dir : t -> string -> string -> unit
