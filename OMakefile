@@ -1,0 +1,45 @@
+.PHONY: build clean install
+
+.DEFAULT: build
+
+USE_OCAMLFIND = true
+
+OCAMLPACKS[] =
+	extlib
+	cryptokit
+	unix
+	str
+
+NATIVE_ENABLED = true
+BYTE_ENABLED = false
+
+#
+# Various options
+#
+OCAMLFLAGS    += -g -warn-error all
+# OCAMLCFLAGS   +=
+# OCAMLOPTFLAGS +=
+# OCAML_LINK_FLAGS +=
+# OCAML_BYTE_LINK_FLAGS +=
+# OCAML_NATIVE_LINK_FLAGS +=
+
+src[]=
+	auto_ftp
+	interactive
+	main
+
+prog = $(OCamlProgram auto-ftp,$(src))
+
+build : install/bin/auto-ftp
+
+mkdir -p install/bin
+
+install/bin/auto-ftp : auto-ftp
+	cp $< $@
+
+clean :
+	rm -f $(prog)
+	rm -f *.o *.cmo *.cmx *.cma *.cmi *.omc .omakedb*
+	rm -rf install
+
+

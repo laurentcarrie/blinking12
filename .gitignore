@@ -5,3 +5,5 @@
 *.cmx
 *.swp
 auto-ftp
+install/
+.omakedb
