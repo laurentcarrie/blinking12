@@ -3,7 +3,12 @@
 .DEFAULT: build
 
 srcdir = $(absname $(dir $(CWD)))
-prefix = $(srcdir)/install
+
+if $(not $(defined prefix))
+	prefix = $(srcdir)/install
+	export
+
+println($"prefix is : $(prefix)")
 
 USE_OCAMLFIND = true
 

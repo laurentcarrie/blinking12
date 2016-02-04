@@ -219,7 +219,19 @@ let put_data_in_distant_file t distant_filename data = (
     | e -> printf "Erreur in put_data_in_distant_file %s\n" distant_filename ; flush stdout ; raise e
 )
 
+let rm t filename = (
+  let () = log ">>>%s<<<\n" filename in
+  let command = sprintf "DELE %s\r\n" filename in 
+  let () = log "%s" command in
+  let () = fprintf t.fout "%s" command ; flush t.fout ; in
+  let line = input_line t.fin in
+  let () = log "%s\n" line in 
+    ()
+)
+
+
 let mv t old_name new_name = (
+  let () = rm t new_name in
   let () = fprintf t.fout "RNFR %s\r\n" old_name ; flush t.fout ; in
   let line = input_line t.fin in
   let () = log "%s\n" line in 
@@ -423,12 +435,11 @@ let put_dir ~use_sha1 t local_dir distant_dir  = (
     let () = mkdir t distant_dir in
     let files = Array.to_list ( Sys.readdir local_dir ) in
       List.iter ( fun f ->
-	let () = log "E: '%s'\n" f in
-	  if Sys.is_directory (local_dir//f) then (
-	    r (local_dir//f)  (distant_dir//f) 
-	  ) else (
-	    put_file ~use_sha1 t (local_dir//f) (distant_dir//f)
-	  )
+	if Sys.is_directory (local_dir//f) then (
+	  r (local_dir//f)  (distant_dir//f) 
+	) else (
+	  put_file ~use_sha1 t (local_dir//f) (distant_dir//f)
+	)
       ) files
   )
   in
@@ -442,16 +453,6 @@ let nlst t dirname = (
     data
 )
 
-
-let rm t filename = (
-  let () = log ">>>%s<<<\n" filename in
-  let command = sprintf "DELE %s\r\n" filename in 
-  let () = log "%s" command in
-  let () = fprintf t.fout "%s" command ; flush t.fout ; in
-  let line = input_line t.fin in
-  let () = log "%s\n" line in 
-    ()
-)
 
 let cwd t dir = (
   let _ = command t false ["CWD";dir] in

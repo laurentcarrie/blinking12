@@ -36,6 +36,12 @@ let _ =
 	o 
     in
 
+    let opt_script = 
+      let o = OptParse.Opt.value_option "" None (fun a -> a) (fun e _ -> Printexc.to_string e) in
+      let () = OptParse.OptParser.add opt ~long_name:"script" ~help:"script file" o in
+	o 
+    in
+
     let opt_echo = 
       let o = OptParse.StdOpt.store_true () in
       let () = OptParse.OptParser.add opt ~long_name:"echo" ~help:"echo" o in
@@ -47,6 +53,7 @@ let _ =
     let host_string = OptParse.Opt.get opt_host in
     let port = OptParse.Opt.get opt_port in
     let user = OptParse.Opt.get opt_user in
+    let script = OptParse.Opt.opt opt_script in
       
     let host = Unix.gethostbyname host_string in
     let addr = host.Unix.h_addr_list.(0) in
@@ -62,7 +69,12 @@ let _ =
 	| Auto_ftp.Connection_failed -> Auto_ftp.cancel_password ~host:host_string ~port ~user ; raise Auto_ftp.Connection_failed
 	    
     in
-      Interactive.interactive_loop t
+      match script with
+	| None -> Interactive.interactive_loop t read_line
+	| Some f -> (
+	    let fin = open_in f in
+	      Interactive.interactive_loop t ( fun () -> input_line fin )
+	  )
   with
     | e -> printf "%s\n" (Printexc.to_string e) ; usage () ; exit 1
 	

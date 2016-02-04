@@ -104,7 +104,7 @@ let commands : (string * (Auto_ftp.t->string list->unit) * string) list = (
 						  
     "put_dir",(fun t args ->
       match args with
-	| dirname::[] ->  let _ = Auto_ftp.put_dir ~use_sha1:false t dirname dirname in ()
+	| dirname::[] ->  let _ = Auto_ftp.put_dir ~use_sha1:true t dirname dirname in ()
 	| local_dirname::distant_dirname::[] -> let _ = Auto_ftp.put_dir ~use_sha1:true t local_dirname distant_dirname in ()
 	| _ -> (log "%s" "bad args for put_dir_no_sha1")
     ), "recursively put directory, using sha1 hashes to prevent useless puts" ;
@@ -130,12 +130,12 @@ let commands : (string * (Auto_ftp.t->string list->unit) * string) list = (
   
 
 
-let interactive_loop t = (
+let interactive_loop t read = (
   (* log_print := Some ( fun s -> printf "%s" s ; flush stdout )  ; *)
   (* let _ = Auto_ftp.echo false in *)
   let rec r () = 
     let () = printf "" ; flush stdout ; in
-    let line = read_line () in
+    let line = read () in
     let line = String.strip line in
     let line = if String.starts_with line "#" then "" else line in
     let line = if String.starts_with line "!" then (
@@ -145,11 +145,16 @@ let interactive_loop t = (
     ) else line in
     let command = String.nsplit line " " in
     let command = List.filter ( fun s -> String.strip s <> "") command in
-    let () = try
-	let (_,f,_) = List.find ( fun (name,f,_) -> name = List.hd command ) commands in
-	  f t (List.tl command)
-      with
-	| Not_found -> printf "no such command ; '%s'\n" (List.hd command)
+    let () = match command with
+      | [] -> ()
+      | hd::args -> (
+	  try
+	    let (_,f,_) = List.find ( fun (name,f,_) -> name = hd ) commands in
+	      f t args
+	  with
+	    | List.Empty_list -> printf "empty list\n"
+	    | Not_found -> printf "no such command ; '%s'\n" (List.hd command)
+	) 
     in
       r ()
   in
