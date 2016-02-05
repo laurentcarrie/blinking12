@@ -4,21 +4,6 @@ open ExtString
 
 let log = Auto_ftp.log
 
-let help () = 
-  printf "
-help                 : this help
-list                 : list files in remote directory
-ls                   : list files in remote directory
-pwd                  : print remote current working directory
-cwd <arg>            : change remote working direcytory
-rm <arg>             : remove file
-mkdir <arg>          : make directory
-rmdir <arg>          : remove directory (must be empty)
-mv <arg1> <arg2>     : move file
-put <local> <remote> : put file
-get <remote> <local> : get file
-" ; flush stdout
-
 let print_list t d = (
   let data = Auto_ftp.list t d in
   let data = List.sort ~cmp:( fun f1 f2 ->
@@ -50,8 +35,10 @@ let print_compare t l d = (
 )
 
 let help commands t _ = (
+  printf "help\tprint this help\n" ;
+  printf "!command\tlocally runs [command]\n" ;
   List.iter ( fun (name,_,h) ->
-    printf "%s\n   %s\n" name h
+    printf "%s\t\t%s\n" name h
   ) commands
 )
 
@@ -87,7 +74,7 @@ let commands : (string * (Auto_ftp.t->string list->unit) * string) list = (
       in ()
     ),"get [filename | distant_name local_name] : gets a file" ;
 
-    "get_dir",(fun t args ->
+    "getdir",(fun t args ->
       let () = match args with
 	| dirname::[] -> let _ = Auto_ftp.get_dir t dirname dirname in ()
 	| distant_dirname::local_dirname::[] -> let _ = Auto_ftp.get_dir t distant_dirname local_dirname in ()
@@ -95,14 +82,14 @@ let commands : (string * (Auto_ftp.t->string list->unit) * string) list = (
       in  ()
     ),"get_dir [dirname | distant_dirname local_dirname] : recursively gets a directory, using sha1 stored to optimize" ;
 
-    "put_dir_no_sha1",(fun t args ->
+    "putdir_no_sha1",(fun t args ->
       match args with
 	| dirname::[] ->  let _ = Auto_ftp.put_dir ~use_sha1:false t dirname dirname in ()
 	| local_dirname::distant_dirname::[] -> let _ = Auto_ftp.put_dir ~use_sha1:false t local_dirname distant_dirname in ()
 	| _ -> (log "%s" "bad args for put_dir_no_sha1")
     ), "recursively put directory, ignoring sha1 hashes (really puts all files)" ;
 						  
-    "put_dir",(fun t args ->
+    "putdir",(fun t args ->
       match args with
 	| dirname::[] ->  let _ = Auto_ftp.put_dir ~use_sha1:true t dirname dirname in ()
 	| local_dirname::distant_dirname::[] -> let _ = Auto_ftp.put_dir ~use_sha1:true t local_dirname distant_dirname in ()
@@ -122,8 +109,45 @@ let commands : (string * (Auto_ftp.t->string list->unit) * string) list = (
       | _ -> (log "%s" "bad args for put_no_sha1")
     ),"put file, ignoring sha1 hash (always write file)" ;
 				  
+    "mv",(fun t args -> match args with
+      | old_name::new_name::[] ->  let _ = Auto_ftp.mv t old_name new_name in ()
+      | _ -> (log "%s" "bad args for mv")
+    ),"mv old_name new_name : unlinks new_name if necessary, move old_name to new_name" ;
+				  
+    "rm",(fun t args -> match args with
+      | name::[] ->  let _ = Auto_ftp.rm t name in ()
+      | _ -> (log "%s" "bad args for rm")
+    ),"rm name : unlinks file name" ;
+				  
+    "getdir",(fun t args -> match args with
+      | name::[] ->  let _ = Auto_ftp.get_dir t name in ()
+      | distant_name::local_name::[] ->  let _ = Auto_ftp.get_dir t distant_name local_name in ()
+      | _ -> (log "%s" "bad args for getdir")
+    ),"getdir distant_name [local_name] : gets directory" ;
+				  
+    "rmdir",(fun t args -> match args with
+      | name::[] ->  let _ = Auto_ftp.rmdir t name in ()
+      | _ -> (log "%s" "bad args for rmdir")
+    ),"rmdir dirname : recursively removes  remote dirname" ;
+				  
+    "mkdir",(fun t args -> match args with
+      | name::[] ->  let _ = Auto_ftp.mkdir t name in ()
+      | _ -> (log "%s" "bad args for rmdir")
+    ),"mkdir dirname : creates remote dirname" ;
+				  
+    "cd",(fun t args -> match args with
+      | name::[] ->  let _ = Auto_ftp.command t false ["CWD";name] in ()
+      | _ -> (log "%s" "bad args for cd")
+    ),"cd dirname : change remote directory to dirname" ;
+				  
+    "pwd",(fun t args -> match args with
+      | name::[] ->  let pwd = Auto_ftp.pwd t in printf "%s\n" pwd ; ()
+      | _ -> (log "%s" "bad args for pwd")
+    ),"pwd : print remote current directory" ;
+				  
   ]
   in
+  let commands = List.sort ~cmp:(fun (n1,_,_) (n2,_,_) -> String.compare n1 n2) commands in
     ("help",help commands,"help")::commands
 )
 

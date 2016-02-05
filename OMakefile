@@ -46,10 +46,7 @@ $(prefix)/bin/auto-ftp : auto-ftp
 	cp $< $@
 
 clean :
-	rm -f $(prog)
-	rm -f *.o *.cmo *.cmx *.cma *.cmi *.omc .omakedb*
-	rm -rf $(prefix)
-
+	rm -f $(filter-proper-targets $(ls R, .))
 
 println($"scrdir : $(srcdir)")
 
